@@ -2,6 +2,8 @@
 
 Repo-anchored CLI for working with decisions. Authenticate, bind a repository to a DecisionOps project, install AI agent skills, and manage decisions from the terminal.
 
+![dops --help](assets/demo-help.gif)
+
 ## Install
 
 **macOS / Linux**
@@ -43,6 +45,14 @@ dops doctor
 dops gate --task "migrate from Postgres to CockroachDB"
 dops decisions list --status accepted
 ```
+
+### `dops init`
+
+![dops init](assets/demo-init.gif)
+
+### `dops doctor`
+
+![dops doctor](assets/demo-doctor.gif)
 
 ## Commands
 
