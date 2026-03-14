@@ -1,11 +1,10 @@
-import path from "node:path";
 import { resolveRepoPath } from "../core/git.js";
 import { installPlatforms } from "../core/installer.js";
 import { loadPlatforms } from "../core/platforms.js";
-import { DEFAULT_SKILL_NAME, DEFAULT_MCP_SERVER_NAME, DEFAULT_MCP_SERVER_URL } from "../core/config.js";
 import { promptSelect, promptConfirm } from "../ui/prompts.js";
 import { renderInstallSummary } from "../ui/output.js";
 import { resetFlowState, flowChrome } from "../ui/flow-state.js";
+import { findPlatformsDir, findSkillSourceDir } from "../core/resources.js";
 
 type InstallFlags = {
   platform?: string[];
@@ -31,20 +30,6 @@ type InstallFlags = {
 
 function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
-}
-
-function findPlatformsDir(): string {
-  const candidates = [
-    path.join(import.meta.dir, "..", "..", "node_modules", "@decisionops", "skill", "platforms"),
-    path.join(import.meta.dir, "..", "..", "..", "skill", "platforms"),
-  ];
-  for (const dir of candidates) {
-    try {
-      const platforms = loadPlatforms(dir);
-      if (Object.keys(platforms).length > 0) return dir;
-    } catch {}
-  }
-  throw new Error("Could not find platform definitions.");
 }
 
 async function choosePlatforms(initialIds: string[] | undefined, platformsDir: string): Promise<string[]> {
@@ -78,6 +63,7 @@ export async function runInstall(flags: InstallFlags): Promise<void> {
   const platformsDir = findPlatformsDir();
   const selectedPlatforms = await choosePlatforms(flags.platform, platformsDir);
   const repoPath = resolveRepoPath(flags.repoPath);
+  const sourceDir = !(flags.skipSkill ?? false) ? (flags.sourceDir ?? findSkillSourceDir()) : flags.sourceDir;
 
   const result = installPlatforms({
     platformsDir,
@@ -93,7 +79,7 @@ export async function runInstall(flags: InstallFlags): Promise<void> {
     writeManifest: !(flags.skipManifest ?? false),
     allowPlaceholders: flags.allowPlaceholders,
     outputDir: flags.outputDir,
-    sourceDir: flags.sourceDir,
+    sourceDir,
     skillName: flags.skillName,
     serverName: flags.serverName,
     serverUrl: flags.serverUrl,

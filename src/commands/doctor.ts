@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import path from "node:path";
 import { readAuthState, ensureValidAuthState, isExpired } from "../core/auth.js";
 import { readManifest } from "../core/manifest.js";
 import { resolveRepoPath } from "../core/git.js";
 import { DEFAULT_SKILL_NAME } from "../core/config.js";
-import { loadPlatforms, resolveInstallPath, type PlatformDefinition } from "../core/platforms.js";
+import { loadPlatforms, resolveInstallPath } from "../core/platforms.js";
 import { renderDoctorReport, type DoctorPlatformStatus } from "../ui/output.js";
+import { findPlatformsDir } from "../core/resources.js";
 
 type DoctorFlags = { repoPath?: string };
 
@@ -35,14 +35,7 @@ export async function runDoctor(flags: DoctorFlags): Promise<void> {
   // Try to find platform definitions
   let platformStatuses: DoctorPlatformStatus[] = [];
   try {
-    const candidates = [
-      path.join(import.meta.dir, "..", "..", "node_modules", "@decisionops", "skill", "platforms"),
-      path.join(import.meta.dir, "..", "..", "..", "skill", "platforms"),
-    ];
-    let platforms: Record<string, PlatformDefinition> = {};
-    for (const dir of candidates) {
-      try { platforms = loadPlatforms(dir); break; } catch {}
-    }
+    const platforms = loadPlatforms(findPlatformsDir());
     const context = { skill_name: DEFAULT_SKILL_NAME, repo_path: repoPath ?? "" };
     for (const platform of Object.values(platforms)) {
       const skillPath = platform.skill?.supported ? resolveInstallPath(platform.skill, context) : null;

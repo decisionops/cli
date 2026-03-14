@@ -1,13 +1,12 @@
-import path from "node:path";
 import { resolveRepoPath } from "../core/git.js";
 import { cleanupPlatforms } from "../core/installer.js";
 import { readAuthState, revokeAuthState, clearAuthState } from "../core/auth.js";
 import { loadPlatforms } from "../core/platforms.js";
-import { DEFAULT_SKILL_NAME, DEFAULT_MCP_SERVER_NAME } from "../core/config.js";
 import { promptSelect, promptConfirm } from "../ui/prompts.js";
 import { withSpinner } from "../ui/spinner.js";
 import { renderCleanupSummary } from "../ui/output.js";
 import { resetFlowState, flowChrome } from "../ui/flow-state.js";
+import { findPlatformsDir } from "../core/resources.js";
 
 type UninstallFlags = {
   platform?: string[];
@@ -23,20 +22,6 @@ type UninstallFlags = {
 
 function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
-}
-
-function findPlatformsDir(): string {
-  const candidates = [
-    path.join(import.meta.dir, "..", "..", "node_modules", "@decisionops", "skill", "platforms"),
-    path.join(import.meta.dir, "..", "..", "..", "skill", "platforms"),
-  ];
-  for (const dir of candidates) {
-    try {
-      const platforms = loadPlatforms(dir);
-      if (Object.keys(platforms).length > 0) return dir;
-    } catch {}
-  }
-  throw new Error("Could not find platform definitions.");
 }
 
 export async function runUninstall(flags: UninstallFlags): Promise<void> {

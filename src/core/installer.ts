@@ -265,6 +265,9 @@ export function installPlatforms(options: InstallOptions): InstallResult {
   const allowPlaceholders = options.allowPlaceholders ?? false;
 
   if (sourceDir) ensureSkillSource(sourceDir);
+  if (!sourceDir && installSkill && selected.some((platform) => platform.skill?.supported)) {
+    throw new Error("Skill source is required to install skill files. Pass --source-dir or use --skip-skill.");
+  }
 
   const repoRequired = shouldWriteManifest || (installMcp && selected.some((p) => p.mcp?.supported && p.mcp.scope === "project"));
   if (repoRequired && !repoPath) {
@@ -315,12 +318,16 @@ export function installPlatforms(options: InstallOptions): InstallResult {
   for (const platform of selected) {
     const context = contextForPaths(skillName, repoPath);
 
-    if (installSkill && platform.skill?.supported && sourceDir && outputDir) {
+    if (installSkill && platform.skill?.supported && sourceDir) {
       const target = resolveInstallPath(platform.skill, context);
       if (!target) throw new Error(`Could not determine skill install path for ${platform.id}`);
-      const relativePath = expandPath(platform.skill.build_path!, contextForPaths(skillName, null));
-      const bundle = path.join(outputDir, platform.id, relativePath);
-      copyDir(bundle, target);
+      if (outputDir) {
+        const relativePath = expandPath(platform.skill.build_path!, contextForPaths(skillName, null));
+        const bundle = path.join(outputDir, platform.id, relativePath);
+        copyDir(bundle, target);
+      } else {
+        copyDir(sourceDir, target);
+      }
       result.installedSkills.push({ platformId: platform.id, target });
     }
 

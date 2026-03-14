@@ -394,6 +394,36 @@ scope = "user"
       expect(fs.existsSync(path.join(skillTarget, "SKILL.md"))).toBe(true);
       expect(fs.existsSync(path.join(skillTarget, "helper.md"))).toBe(true);
     });
+
+    it("copies skill source directly when outputDir is not provided", () => {
+      const sourceDir = createSkillSource(tmpDir);
+      const skillTarget = path.join(repoDir, ".json-platform", "skills", "decision-ops");
+
+      const customToml = `
+id = "json-platform"
+display_name = "JSON Platform"
+
+[skill]
+supported = true
+build_path = ".decision-ops/skills/{skill_name}"
+install_path_default = "{repo_path}/.json-platform/skills/{skill_name}"
+scope = "project"
+`;
+      writePlatformToml(platformsDir, "json-platform", customToml);
+
+      const result = installPlatforms({
+        platformsDir,
+        repoPath: repoDir,
+        sourceDir,
+        installSkill: true,
+        installMcp: false,
+        writeManifest: false,
+      });
+
+      expect(result.installedSkills).toEqual([{ platformId: "json-platform", target: skillTarget }]);
+      expect(fs.existsSync(path.join(skillTarget, "SKILL.md"))).toBe(true);
+      expect(fs.existsSync(path.join(skillTarget, "helper.md"))).toBe(true);
+    });
   });
 
   // ============================================================
@@ -741,6 +771,30 @@ scope = "user"
           writeManifest: false,
         }),
       ).toThrow("Skill source missing SKILL.md");
+    });
+
+    it("throws when skill install is requested without a sourceDir", () => {
+      const customToml = `
+id = "json-platform"
+display_name = "JSON Platform"
+
+[skill]
+supported = true
+build_path = ".decision-ops/skills/{skill_name}"
+install_path_default = "{repo_path}/.json-platform/skills/{skill_name}"
+scope = "project"
+`;
+      writePlatformToml(platformsDir, "json-platform", customToml);
+
+      expect(() =>
+        installPlatforms({
+          platformsDir,
+          repoPath: repoDir,
+          installSkill: true,
+          installMcp: false,
+          writeManifest: false,
+        }),
+      ).toThrow("Skill source is required to install skill files");
     });
 
     it("throws when repoPath is required but not provided", () => {

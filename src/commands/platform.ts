@@ -1,21 +1,6 @@
-import path from "node:path";
 import { loadPlatforms } from "../core/platforms.js";
 import { buildPlatforms } from "../core/installer.js";
-import { DEFAULT_SKILL_NAME, DEFAULT_MCP_SERVER_NAME, DEFAULT_MCP_SERVER_URL } from "../core/config.js";
-
-function findPlatformsDir(): string {
-  const candidates = [
-    path.join(import.meta.dir, "..", "..", "node_modules", "@decisionops", "skill", "platforms"),
-    path.join(import.meta.dir, "..", "..", "..", "skill", "platforms"),
-  ];
-  for (const dir of candidates) {
-    try {
-      const platforms = loadPlatforms(dir);
-      if (Object.keys(platforms).length > 0) return dir;
-    } catch {}
-  }
-  throw new Error("Could not find platform definitions. Ensure @decisionops/skill is installed or is adjacent.");
-}
+import { findPlatformsDir, findSkillSourceDir } from "../core/resources.js";
 
 export async function runPlatformList(): Promise<void> {
   const dir = findPlatformsDir();
@@ -41,7 +26,7 @@ export async function runPlatformBuild(flags: {
     platformsDir,
     selectedPlatforms: flags.platform,
     outputDir: flags.outputDir ?? "build",
-    sourceDir: flags.sourceDir,
+    sourceDir: flags.sourceDir ?? findSkillSourceDir(),
     skillName: flags.skillName,
     serverName: flags.serverName,
     serverUrl: flags.serverUrl,
