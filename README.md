@@ -1,8 +1,23 @@
 # dops
 
-Repo-anchored CLI for working with decisions. Authenticate, bind a repository to a DecisionOps project, install AI agent skills, and manage decisions from the terminal.
+`dops` is the DecisionOps CLI for wiring a repo to DecisionOps, installing editor integrations, and working with decisions from the terminal.
 
-![dops --help](assets/demo-help.gif)
+If you are a developer evaluating this tool, the important questions are:
+
+1. What will it change in my repo?
+2. What will it change in my editor config?
+3. How do I know it worked?
+4. How do I undo it?
+
+This README is organized around those questions.
+
+## What dops does
+
+`dops` helps with three jobs:
+
+- Bind a git repo to a DecisionOps org/project.
+- Install the DecisionOps skill and MCP configuration for your editor or coding agent.
+- Query and manage decisions from the terminal.
 
 ## Install
 
@@ -18,41 +33,182 @@ curl -fsSL https://get.decisionops.dev/dops | sh
 irm https://get.decisionops.dev/dops | iex
 ```
 
-Both scripts download a precompiled binary to `~/.dops/bin` and add it to your shell PATH. Customize with environment variables:
+The install script downloads a precompiled binary to `~/.dops/bin` and adds it to your shell `PATH`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DOPS_INSTALL_DIR` | `~/.dops/bin` | Where to install the binary |
-| `DOPS_VERSION` | `latest` | Specific release tag (e.g. `v0.1.0`) |
+| `DOPS_INSTALL_DIR` | `~/.dops/bin` | Install location for the binary |
+| `DOPS_VERSION` | `latest` | Specific release tag such as `v0.1.0` |
 
-## Quick start
+## Five-minute setup
 
 ```bash
-# 1. Authenticate
+# 1. Authenticate this machine
 dops login
 
-# 2. Bind this repo to your DecisionOps project
+# 2. Move into the repo you want to bind
 cd your-repo
-dops init --org-id <org> --project-id <project>
 
-# 3. Install skill + MCP config for your editor
-dops install --platform claude-code
+# 3. Create the repo binding
+dops init --org-id <org_id> --project-id <project_id>
 
-# 4. Check everything is wired up
+# 4. Install your editor integration
+dops install --platform codex
+
+# 5. Verify everything is in place
 dops doctor
-
-# 5. Start using decisions
-dops gate --task "migrate from Postgres to CockroachDB"
-dops decisions list --status accepted
 ```
 
-### `dops init`
+When this is working, you should have:
+
+- `.decisionops/manifest.toml` in the repo
+- a DecisionOps skill installed for your selected platform
+- an MCP config entry pointing at the DecisionOps MCP server
+- `dops doctor` showing the repo binding and platform status
+
+## What gets written
+
+`dops` writes a small number of files so the integration is inspectable and reversible.
+
+### In your repo
+
+| Path | Written by | Purpose |
+|---|---|---|
+| `.decisionops/manifest.toml` | `dops init`, `dops install` | Binds the repo to an org/project and records MCP server details |
+| `.decisionops/auth-handoff.toml` | `dops install` | Tells the editor or MCP client how to complete the first interactive auth handoff |
+| `.mcp.json` | `dops install -p claude-code` | Claude Code project MCP config |
+| `.cursor/mcp.json` | `dops install -p cursor` | Cursor project MCP config |
+| `.vscode/mcp.json` | `dops install -p vscode` | VS Code project MCP config |
+
+### In your user config
+
+| Path | Written by | Purpose |
+|---|---|---|
+| `~/.decisionops/auth.json` | `dops login` | Stores CLI auth state |
+| `~/.codex/skills/decision-ops` | `dops install -p codex` | Installs the DecisionOps skill for Codex |
+| `~/.codex/config.toml` | `dops install -p codex` | Adds the DecisionOps MCP server to Codex |
+| `~/.claude/skills/decision-ops` | `dops install -p claude-code` | Installs the DecisionOps skill for Claude Code |
+| `~/.cursor/skills/decision-ops` | `dops install -p cursor` | Installs the DecisionOps skill for Cursor |
+| `~/.antigravity/skills/decision-ops` | `dops install -p antigravity` | Installs the DecisionOps skill for Antigravity |
+
+## What success looks like
+
+### Repo binding
+
+`dops init` should leave a manifest in the repo.
 
 ![dops init](assets/demo-init.gif)
 
-### `dops doctor`
+Example manifest written by the CLI:
+
+```toml
+version = 1
+org_id = "acme"
+project_id = "backend"
+repo_ref = "acme/backend"
+default_branch = "main"
+mcp_server_name = "decision-ops-mcp"
+mcp_server_url = "https://api.aidecisionops.com/mcp"
+```
+
+### Setup verification
+
+`dops doctor` is the quickest way to verify auth, repo binding, and platform installation status.
 
 ![dops doctor](assets/demo-doctor.gif)
+
+Use it whenever you are unsure whether the CLI, manifest, or editor integration is the thing that is broken.
+
+## Supported platforms
+
+| Platform | Skill install | MCP config | Default MCP location |
+|---|---|---|---|
+| Claude Code | yes | yes | `<repo>/.mcp.json` |
+| VS Code | no | yes | `<repo>/.vscode/mcp.json` |
+| Cursor | yes | yes | `<repo>/.cursor/mcp.json` |
+| Codex | yes | yes | `~/.codex/config.toml` |
+| Antigravity | yes | yes | platform-specific user config via `ANTIGRAVITY_MCP_CONFIG_PATH` |
+
+## Common workflows
+
+### Authenticate
+
+```bash
+dops login
+dops login --web
+dops login --with-token
+dops login --with-token --token dop_...
+dops logout
+dops auth status
+```
+
+### Bind a repo
+
+```bash
+dops init --org-id acme --project-id backend --repo-ref acme/backend
+```
+
+For local prototyping without live IDs:
+
+```bash
+dops init --allow-placeholders
+```
+
+### Install an editor integration
+
+```bash
+dops install --platform codex
+dops install --platform claude-code
+dops install --platform cursor
+dops install --platform vscode
+```
+
+Install multiple targets at once:
+
+```bash
+dops install --platform codex --platform claude-code
+```
+
+Only write the skill:
+
+```bash
+dops install --platform codex --skip-mcp
+```
+
+Only write the MCP config:
+
+```bash
+dops install --platform codex --skip-skill
+```
+
+### Verify or troubleshoot setup
+
+```bash
+dops doctor
+dops doctor --repo-path /path/to/repo
+```
+
+### Remove the integration
+
+```bash
+dops uninstall --platform codex --skip-auth
+dops uninstall --platform claude-code --remove-manifest --skip-auth
+```
+
+## Working with decisions
+
+Once the repo is bound and auth is set up, you can work with decisions directly from the terminal.
+
+```bash
+dops gate --task "switch from REST to gRPC for internal services"
+dops decisions list --status proposed
+dops decisions get dec_abc123
+dops decisions search "database migration"
+dops decisions create
+dops validate dec_abc123
+dops publish dec_abc123
+dops status
+```
 
 ## Commands
 
@@ -60,269 +216,87 @@ dops decisions list --status accepted
 
 | Command | Description |
 |---|---|
-| `dops login` | Authenticate via browser OAuth or access token |
-| `dops logout` | Revoke session and clear local credentials |
-| `dops auth status` | Show current user, method, and token expiry |
+| `dops login` | Authenticate via browser OAuth or raw token |
+| `dops logout` | Remove the current CLI session |
+| `dops auth status` | Show the saved auth session |
 
-### Repository setup
-
-| Command | Description |
-|---|---|
-| `dops init` | Bind repo to a DecisionOps project (writes `.decisionops/manifest.toml`) |
-| `dops install` | Install skill files + MCP config for chosen platforms |
-| `dops uninstall` | Remove skill files, MCP entries, and optionally auth state |
-| `dops doctor` | Diagnose auth, manifest, platforms, and connectivity |
-
-### Decisions
+### Repo and platform setup
 
 | Command | Description |
 |---|---|
-| `dops decisions list` | List decisions with optional filters |
-| `dops decisions get <id>` | Show full decision detail |
-| `dops decisions search <terms>` | Search decisions by keywords |
-| `dops decisions create` | Interactive decision creation |
-| `dops gate` | Classify whether current task warrants a recorded decision |
-| `dops validate [id]` | Validate a decision against org constraints |
-| `dops publish <id>` | Transition a proposed decision to accepted |
+| `dops init` | Write `.decisionops/manifest.toml` for the current repo |
+| `dops install` | Install skill files and MCP config for one or more platforms |
+| `dops uninstall` | Remove installed skill files and MCP config |
+| `dops doctor` | Diagnose auth, manifest, and platform state |
+| `dops platform list` | Show supported platforms |
+| `dops platform build` | Build platform bundles without installing them |
 
-### Governance
-
-| Command | Description |
-|---|---|
-| `dops status` | Coverage, health, drift rate, and active alerts |
-
-### Platforms
+### Decisions and governance
 
 | Command | Description |
 |---|---|
-| `dops platform list` | List supported platforms and capabilities |
-| `dops platform build` | Build platform-specific bundles |
+| `dops gate` | Classify whether a task should become a recorded decision |
+| `dops decisions list` | List decisions |
+| `dops decisions get <id>` | Show one decision |
+| `dops decisions search <terms>` | Search decisions |
+| `dops decisions create` | Create a new decision interactively |
+| `dops validate [id]` | Validate a decision |
+| `dops publish <id>` | Transition a decision to accepted |
+| `dops status` | Show governance snapshot and alerts |
 
-## Command reference
-
-### `dops login`
-
-Authenticate this machine with DecisionOps.
-
-```bash
-dops login              # interactive browser OAuth (default)
-dops login --web        # force browser-based PKCE
-dops login --with-token # paste an access token (CI / headless)
-dops login --clear      # remove saved credentials
-```
-
-Key flags:
-
-| Flag | Description |
-|---|---|
-| `--web` | Use browser-based PKCE login |
-| `--with-token` | Save a raw access token |
-| `--token <token>` | Token value (use with `--with-token`) |
-| `--no-browser` | Don't auto-launch browser |
-| `--clear` | Remove saved login state |
-| `--api-base-url <url>` | Custom API endpoint |
-| `--issuer-url <url>` | Custom OAuth issuer |
-
-### `dops init`
-
-Bind the current repo to a DecisionOps org and project.
-
-```bash
-dops init --org-id acme --project-id backend --repo-ref acme/backend
-dops init --allow-placeholders   # local prototyping without real IDs
-```
-
-Creates `.decisionops/manifest.toml` with org/project binding, repo reference, and MCP server config.
-
-Key flags:
-
-| Flag | Description |
-|---|---|
-| `--org-id <id>` | Organization ID |
-| `--project-id <id>` | Project ID |
-| `--repo-ref <ref>` | GitHub repo reference (`owner/repo`) |
-| `--default-branch <branch>` | Default branch (auto-detected from git) |
-| `--allow-placeholders` | Use placeholder values for local prototyping |
-| `--server-name <name>` | MCP server name (default: `decision-ops`) |
-| `--server-url <url>` | MCP server URL |
-
-### `dops install`
-
-Install the Decision Ops skill and MCP configuration for one or more platforms.
-
-```bash
-dops install                          # interactive platform selection
-dops install -p claude-code           # specific platform
-dops install -p claude-code -p cursor # multiple platforms
-dops install --skip-mcp               # skill files only
-```
-
-Key flags:
-
-| Flag | Description |
-|---|---|
-| `-p, --platform <id>` | Platform to install (repeatable) |
-| `-y, --yes` | Accept defaults without prompting |
-| `--skip-manifest` | Don't write manifest |
-| `--skip-skill` | Don't install skill files |
-| `--skip-mcp` | Don't configure MCP server |
-| `--output-dir <path>` | Build output directory |
-
-Also accepts all `init` flags (`--org-id`, `--project-id`, etc.) to configure the manifest in one step.
-
-### `dops uninstall`
-
-Remove installed skill files, MCP config entries, and optionally auth state.
-
-```bash
-dops uninstall -p claude-code
-dops uninstall -p claude-code --remove-manifest --skip-auth
-```
-
-| Flag | Description |
-|---|---|
-| `-p, --platform <id>` | Platform to clean up (repeatable) |
-| `--skip-skill` | Keep skill files |
-| `--skip-mcp` | Keep MCP config |
-| `--skip-auth` | Don't revoke auth |
-| `--remove-manifest` | Also delete `.decisionops/manifest.toml` |
-
-### `dops doctor`
-
-Run diagnostics on the local DecisionOps setup.
-
-```bash
-dops doctor
-dops doctor --repo-path /path/to/repo
-```
-
-Checks: authentication state, git repo detection, manifest presence and required fields, platform installation status (skill + MCP for each supported platform).
-
-### `dops decisions list`
-
-```bash
-dops decisions list
-dops decisions list --status proposed --type technical --limit 10
-```
-
-| Flag | Description |
-|---|---|
-| `--status <status>` | Filter: `proposed`, `accepted`, `deprecated`, `superseded` |
-| `--type <type>` | Filter: `technical`, `product`, `business`, `governance` |
-| `--limit <n>` | Max results (default: 20) |
-
-### `dops decisions get <id>`
-
-```bash
-dops decisions get dec_abc123
-```
-
-Displays: title, status, type, version, context, outcome, options with pros/cons, consequences, and timestamps.
-
-### `dops decisions search <terms>`
-
-```bash
-dops decisions search "database migration"
-dops decisions search "auth strategy" --mode semantic
-```
-
-| Flag | Description |
-|---|---|
-| `--mode <mode>` | `semantic` or `keyword` (default) |
-
-### `dops decisions create`
-
-Interactive multi-step flow: title, type (technical/product/business/governance), and context.
-
-```bash
-dops decisions create
-```
-
-### `dops gate`
-
-Classify whether the current task warrants a recorded decision.
-
-```bash
-dops gate --task "switch from REST to gRPC for internal services"
-dops gate   # prompts for task summary interactively
-```
-
-Output includes: recordable (yes/no), confidence percentage, reasoning, and suggested decision type.
-
-### `dops validate [id]`
-
-```bash
-dops validate dec_abc123
-```
-
-Validates a decision against organization constraints. Reports errors and warnings.
-
-### `dops publish <id>`
-
-```bash
-dops publish dec_abc123
-dops publish dec_abc123 --version 2   # optimistic concurrency check
-```
-
-Transitions a proposed decision to accepted.
-
-### `dops status`
-
-```bash
-dops status
-```
-
-Governance snapshot: total decisions, coverage %, health %, drift rate, status breakdown, and active alerts.
-
-## Configuration
+## Configuration reference
 
 ### `.decisionops/manifest.toml`
 
-Created by `dops init` or `dops install`. Binds a repository to a DecisionOps project.
+This file is flat TOML, not nested sections.
 
 ```toml
-[decisionops]
+version = 1
 org_id = "acme"
 project_id = "backend"
 repo_ref = "acme/backend"
 default_branch = "main"
+mcp_server_name = "decision-ops-mcp"
+mcp_server_url = "https://api.aidecisionops.com/mcp"
+```
 
-[mcp]
-server_name = "decision-ops"
-server_url = "https://api.aidecisionops.com/mcp"
+Optional field:
+
+```toml
+repo_id = "repo_123"
 ```
 
 ### `~/.decisionops/auth.json`
 
-Created by `dops login`. Stores OAuth tokens or raw access tokens. Managed automatically — don't edit manually.
+Written by `dops login`. This stores CLI auth state and is managed by the CLI.
 
-## Supported platforms
-
-| Platform | Skill | MCP | Config path |
-|---|---|---|---|
-| Claude Code | yes | yes | `.mcp.json` |
-| VS Code | no | yes | `.vscode/mcp.json` |
-| Cursor | yes | yes | `.cursor/mcp.json` |
-| Codex | yes | yes | `codex.toml` |
-| Antigravity | yes | yes | `.antigravity/mcp.json` |
-
-## Environment variables
+### Environment variables
 
 | Variable | Description |
 |---|---|
 | `NO_COLOR` | Disable colored output |
 | `FORCE_COLOR` | Force colored output |
+| `DECISIONOPS_HOME` | Override the default DecisionOps home directory |
+| `CODEX_HOME` | Override the Codex config root used for skill/MCP installation |
+| `CODEX_CONFIG_PATH` | Override the Codex MCP config path |
+| `CLAUDE_SKILLS_DIR` | Override Claude Code skill install location |
+| `CLAUDE_MCP_CONFIG_PATH` | Override Claude Code MCP config path |
+| `CURSOR_SKILLS_DIR` | Override Cursor skill install location |
+| `CURSOR_MCP_CONFIG_PATH` | Override Cursor MCP config path |
+| `VSCODE_MCP_CONFIG_PATH` | Override VS Code MCP config path |
+| `ANTIGRAVITY_SKILLS_DIR` | Override Antigravity skill install location |
+| `ANTIGRAVITY_MCP_CONFIG_PATH` | Override Antigravity MCP config path |
 
 ## Development
 
-Requires [Bun](https://bun.sh) runtime.
+Requires [Bun](https://bun.sh).
 
 ```bash
 bun install
-bun run src/cli.ts --help         # run in dev mode
-bun run typecheck                 # type check
-bun test                          # run tests
-bun run build                     # compile standalone binary
+bun run src/cli.ts --help
+bun run typecheck
+bun test
+bun run build
 ```
 
 ### Cross-platform binaries
