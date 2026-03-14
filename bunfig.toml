@@ -1,0 +1,5 @@
+[install]
+peer = false
+
+[build]
+external = ["react-devtools-core"]
