@@ -40,6 +40,22 @@ The install script downloads a precompiled binary to `~/.dops/bin` and adds it t
 | `DOPS_INSTALL_DIR` | `~/.dops/bin` | Install location for the binary |
 | `DOPS_VERSION` | `latest` | Specific release tag such as `v0.1.0` |
 
+## Update
+
+If `dops` is already installed, update it in place with:
+
+```bash
+dops update
+```
+
+Pin to a specific release:
+
+```bash
+dops update --version v0.1.0
+```
+
+This re-runs the same installer flow used for first-time installation and writes the updated binary to the existing install directory unless you pass `--install-dir`.
+
 ## Five-minute setup
 
 ```bash
@@ -65,6 +81,16 @@ When this is working, you should have:
 - a DecisionOps skill installed for your selected platform
 - an MCP config entry pointing at the DecisionOps MCP server
 - `dops doctor` showing the repo binding and platform status
+
+### Important: CLI auth and IDE MCP auth are separate
+
+`dops login` authenticates the **CLI** only. Each IDE authenticates **separately** via its own browser OAuth flow when you first invoke an MCP tool. After running `dops install`, you still need to:
+
+1. **Enable the MCP server** in your IDE settings (e.g., Cursor: **Settings → Tools & MCP** toggle).
+2. **Complete the browser OAuth flow** — invoke any DecisionOps MCP tool from the IDE, complete sign-in and consent in the browser, then retry the tool call.
+3. **Approve MCP tool invocations** when the IDE prompts you (e.g., Claude Code requires manual approval per tool call).
+
+There is no API key or token-based alternative for IDE MCP authentication.
 
 ## What gets written
 
@@ -226,6 +252,7 @@ dops status
 |---|---|
 | `dops init` | Write `.decisionops/manifest.toml` for the current repo |
 | `dops install` | Install skill files and MCP config for one or more platforms |
+| `dops update` | Update the installed CLI binary |
 | `dops uninstall` | Remove installed skill files and MCP config |
 | `dops doctor` | Diagnose auth, manifest, and platform state |
 | `dops platform list` | Show supported platforms |

@@ -2,3 +2,5 @@ export type DecisionStatus = "proposed" | "accepted" | "deprecated" | "supersede
 export type DecisionType = "technical" | "product" | "business" | "governance";
 export type RiskLevel = "low" | "medium" | "high";
 export type GateMode = "quick" | "comprehensive" | "custom";
+export type DecisionOrigin = "manual" | "agent";
+export type ScopeType = "org" | "repo";

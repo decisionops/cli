@@ -65,6 +65,88 @@ export function loadPlatforms(platformsDir: string): Record<string, PlatformDefi
   return platforms;
 }
 
+function normalizePlatformId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = previous[0]!;
+    previous[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const nextDiagonal = previous[j]!;
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      previous[j] = Math.min(
+        previous[j]! + 1,
+        previous[j - 1]! + 1,
+        diagonal + substitutionCost,
+      );
+      diagonal = nextDiagonal;
+    }
+  }
+
+  return previous[b.length]!;
+}
+
+function suggestPlatformId(platformIds: string[], input: string): string | null {
+  const normalizedInput = normalizePlatformId(input);
+  if (!normalizedInput) return null;
+
+  let bestPrefixMatch: string | null = null;
+  let bestDistanceMatch: { id: string; distance: number } | null = null;
+
+  for (const platformId of platformIds) {
+    const normalizedPlatformId = normalizePlatformId(platformId);
+    if (
+      normalizedPlatformId.startsWith(normalizedInput) ||
+      normalizedInput.startsWith(normalizedPlatformId) ||
+      normalizedPlatformId.includes(normalizedInput)
+    ) {
+      if (!bestPrefixMatch || platformId.length < bestPrefixMatch.length) bestPrefixMatch = platformId;
+      continue;
+    }
+
+    const distance = levenshteinDistance(normalizedInput, normalizedPlatformId);
+    if (!bestDistanceMatch || distance < bestDistanceMatch.distance) {
+      bestDistanceMatch = { id: platformId, distance };
+    }
+  }
+
+  if (bestPrefixMatch) return bestPrefixMatch;
+  if (!bestDistanceMatch) return null;
+
+  const maxDistance = normalizedInput.length <= 4 ? 1 : 2;
+  return bestDistanceMatch.distance <= maxDistance ? bestDistanceMatch.id : null;
+}
+
+function unknownPlatformsMessage(platformIds: string[], missing: string[]): string {
+  const base = `Unknown platform(s): ${missing.join(", ")}.`;
+  if (missing.length === 1) {
+    const suggestion = suggestPlatformId(platformIds, missing[0]!);
+    if (suggestion) return `${base} Did you mean '${suggestion}'? Run 'dops platform list' for supported platforms.`;
+    return `${base} Run 'dops platform list' for supported platforms.`;
+  }
+
+  const suggestions = missing
+    .map((id) => {
+      const suggestion = suggestPlatformId(platformIds, id);
+      return suggestion ? `'${id}' -> '${suggestion}'` : null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  if (suggestions.length > 0) {
+    return `${base} Suggestions: ${suggestions.join(", ")}. Run 'dops platform list' for supported platforms.`;
+  }
+
+  return `${base} Run 'dops platform list' for supported platforms.`;
+}
+
 export function selectPlatforms(
   platforms: Record<string, PlatformDefinition>,
   selectedIds?: string[],
@@ -72,7 +154,7 @@ export function selectPlatforms(
 ): PlatformDefinition[] {
   const orderedIds = selectedIds && selectedIds.length > 0 ? selectedIds : Object.keys(platforms);
   const missing = orderedIds.filter((id) => !platforms[id]);
-  if (missing.length > 0) throw new Error(`Unknown platform(s): ${missing.join(", ")}`);
+  if (missing.length > 0) throw new Error(unknownPlatformsMessage(Object.keys(platforms), missing));
   return orderedIds
     .map((id) => platforms[id])
     .filter((p) => !capability || Boolean(p[capability]?.supported));

@@ -102,7 +102,7 @@ function renderMcpBuildContent(platform: PlatformDefinition, serverName: string,
   const mcp = platform.mcp;
   if (!mcp?.format) throw new Error(`Platform '${platform.id}' is missing MCP format`);
   if (mcp.format === "codex_toml") {
-    return `[mcp_servers.${serverName}]\nenabled = true\nurl = "${serverUrl}"\n`;
+    return `[mcp_servers.${serverName}]\ntype = "http"\nenabled = true\nurl = "${serverUrl}"\n`;
   }
   if (mcp.format === "json_map") {
     return `${JSON.stringify({ [mcp.root_key ?? "mcpServers"]: { [serverName]: { type: "http", url: serverUrl } } }, null, 2)}\n`;
@@ -112,7 +112,7 @@ function renderMcpBuildContent(platform: PlatformDefinition, serverName: string,
 
 function upsertCodexToml(configPath: string, serverName: string, serverUrl: string): void {
   const sectionHeader = `[mcp_servers.${serverName}]`;
-  const newBlock = [sectionHeader, "enabled = true", `url = "${serverUrl}"`];
+  const newBlock = [sectionHeader, `type = "http"`, "enabled = true", `url = "${serverUrl}"`];
   const lines = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8").split(/\r?\n/) : [];
   const output: string[] = [];
   let inserted = false;

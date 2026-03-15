@@ -79,7 +79,8 @@ type RefreshOptions = OAuthOptions & { signal?: AbortSignal };
 export const DEFAULT_API_BASE_URL = "https://api.aidecisionops.com";
 export const DEFAULT_OAUTH_ISSUER_URL = "https://auth.aidecisionops.com/oauth";
 export const DEFAULT_OAUTH_CLIENT_ID = "decisionops-cli";
-export const DEFAULT_OAUTH_SCOPES = ["mcp:read", "mcp:call"];
+export const DEFAULT_OAUTH_SCOPES = ["mcp:read", "mcp:call", "decisions:read", "decisions:write", "decisions:approve", "admin:read"];
+export const DEFAULT_OAUTH_API_AUDIENCE = "https://api.aidecisionops.com/v1";
 
 function authPath(): string {
   return path.join(decisionopsHome(), "auth.json");
@@ -160,7 +161,7 @@ function resolveOAuthOptions(options?: OAuthOptions) {
     apiBaseUrl,
     issuerUrl,
     clientId: options?.clientId ?? DEFAULT_OAUTH_CLIENT_ID,
-    audience: options?.audience,
+    audience: options?.audience ?? DEFAULT_OAUTH_API_AUDIENCE,
     scopes: normalizeScopes(options?.scopes),
   };
 }
@@ -424,7 +425,7 @@ export async function loginWithPkce(options?: PkceLoginOptions): Promise<LoginRe
   authorizationUrl.searchParams.set("code_challenge_method", "S256");
   authorizationUrl.searchParams.set("state", state);
   if (resolved.audience) {
-    authorizationUrl.searchParams.set("audience", resolved.audience);
+    authorizationUrl.searchParams.set("resource", resolved.audience);
   }
 
   options?.onAuthorizeUrl?.(authorizationUrl.toString());
@@ -446,7 +447,7 @@ export async function loginWithPkce(options?: PkceLoginOptions): Promise<LoginRe
     code: callback.params.code,
     redirect_uri: callbackServer.callbackUrl,
     code_verifier: verifier,
-    ...(resolved.audience ? { audience: resolved.audience } : {}),
+    ...(resolved.audience ? { resource: resolved.audience } : {}),
   }, options?.signal)) as TokenResponse;
 
   const userInfo = await fetchUserInfo(discovery, tokenPayload.access_token, options?.signal);
@@ -477,7 +478,7 @@ export async function refreshAuthState(auth: AuthState, options?: RefreshOptions
     grant_type: "refresh_token",
     refresh_token: auth.refreshToken,
     client_id: resolved.clientId,
-    ...(resolved.audience ? { audience: resolved.audience } : {}),
+    ...(resolved.audience ? { resource: resolved.audience } : {}),
   }, options?.signal)) as TokenResponse;
 
   const userInfo = await fetchUserInfo(discovery, tokenPayload.access_token, options?.signal);

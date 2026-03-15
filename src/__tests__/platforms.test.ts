@@ -106,7 +106,21 @@ describe("selectPlatforms", () => {
   });
 
   it("throws for unknown platform ids", () => {
-    expect(() => selectPlatforms(platforms, ["alpha", "unknown"])).toThrow("Unknown platform(s): unknown");
+    expect(() => selectPlatforms(platforms, ["alpha", "unknown"])).toThrow(
+      "Unknown platform(s): unknown. Run 'dops platform list' for supported platforms.",
+    );
+  });
+
+  it("suggests the closest platform id for likely typos", () => {
+    const realPlatforms: Record<string, PlatformDefinition> = {
+      codex: makePlatform({ id: "codex" }),
+      "claude-code": makePlatform({ id: "claude-code" }),
+      cursor: makePlatform({ id: "cursor" }),
+    };
+
+    expect(() => selectPlatforms(realPlatforms, ["claude"])).toThrow(
+      "Unknown platform(s): claude. Did you mean 'claude-code'? Run 'dops platform list' for supported platforms.",
+    );
   });
 
   it("filters by capability when specified", () => {

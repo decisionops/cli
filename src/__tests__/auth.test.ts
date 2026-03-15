@@ -108,7 +108,7 @@ describe("auth (sync/pure functions)", () => {
       expect(read!.apiBaseUrl).toBe("https://api.aidecisionops.com");
       expect(read!.tokenType).toBe("Bearer");
       expect(read!.method).toBe("token");
-      expect(read!.scopes).toEqual(["mcp:read", "mcp:call"]);
+      expect(read!.scopes).toEqual(["mcp:read", "mcp:call", "decisions:read", "decisions:write", "decisions:approve", "admin:read"]);
     });
   });
 

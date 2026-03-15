@@ -177,6 +177,7 @@ describe("installer", () => {
       expect(fs.existsSync(tomlPath)).toBe(true);
       const content = fs.readFileSync(tomlPath, "utf8");
       expect(content).toContain("[mcp_servers.dops-mcp]");
+      expect(content).toContain('type = "http"');
       expect(content).toContain("enabled = true");
       expect(content).toContain('url = "https://mcp.test.com"');
     });
@@ -284,6 +285,7 @@ describe("installer", () => {
       expect(fs.existsSync(target)).toBe(true);
       const content = fs.readFileSync(target, "utf8");
       expect(content).toContain("[mcp_servers.decision-ops-mcp]");
+      expect(content).toContain('type = "http"');
       expect(content).toContain("enabled = true");
     });
 
@@ -341,6 +343,7 @@ describe("installer", () => {
 
       const content = fs.readFileSync(targetPath, "utf8");
       expect(content).toContain("[mcp_servers.decision-ops-mcp]");
+      expect(content).toContain('type = "http"');
       expect(content).toContain("enabled = true");
       expect(content).toContain('url = "https://new-api.com/mcp"');
       expect(content).not.toContain("https://old.com");

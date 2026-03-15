@@ -2,6 +2,8 @@ import { readAuthState, ensureValidAuthState, type AuthState } from "./auth.js";
 import { DEFAULT_API_BASE_URL } from "./config.js";
 import { readManifest } from "./manifest.js";
 
+// ── Types aligned with API worker (decision-record) ──
+
 export type UserOrganization = {
   orgId: string;
   orgName: string;
@@ -28,56 +30,103 @@ export type UserContext = {
   projects: ProjectSummary[];
 };
 
+export type ProjectRepository = {
+  repoId: string;
+  installationId?: string;
+  repoFullName?: string;
+  defaultBranch?: string;
+};
+
 export type ProjectRepositories = {
   project: ProjectSummary;
-  repositories: string[];
+  repositories: ProjectRepository[];
 };
 
+// Decision type aligned with API worker's nested scope+content model
 export type Decision = {
-  id: string;
-  version: number;
+  decisionId: string;
   title: string;
-  status: "proposed" | "accepted" | "deprecated" | "superseded";
   type: "technical" | "product" | "business" | "governance";
-  context?: string;
-  options?: Array<{ name: string; description?: string; pros?: string[]; cons?: string[] }>;
-  outcome?: string;
-  consequences?: string[];
-  owner?: string;
+  status: "proposed" | "accepted" | "deprecated" | "superseded";
+  scopeType: "org" | "repo";
+  scopeRepoId?: string;
+  origin: "manual" | "agent";
+  ownerEmail?: string;
+  version: number;
   createdAt: string;
   updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
 };
 
-export type DecisionDraft = {
+// Full decision detail returned by GET /v1/decisions/:id
+export type DecisionDetail = Decision & {
+  scope?: { repos?: string[]; paths?: string[]; services?: string[]; tags?: string[] };
+  content?: {
+    constraints?: string[];
+    supersedes?: string[];
+    documentFormat?: string;
+    document?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  };
+  sidekick?: { suggestions?: unknown[] };
+};
+
+// Input for POST /v1/decisions — aligned with createDecisionInputSchema
+export type CreateDecisionInput = {
   title: string;
   type: "technical" | "product" | "business" | "governance";
-  context?: string;
-  options?: Array<{ name: string; description?: string; pros?: string[]; cons?: string[] }>;
-  outcome?: string;
-  consequences?: string[];
+  scope?: { repos?: string[]; paths?: string[]; services?: string[]; tags?: string[] };
+  content?: {
+    origin?: "manual" | "agent";
+    constraints?: string[];
+    supersedes?: string[];
+    documentFormat?: string;
+    document?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  };
 };
 
+// DecisionOps workflow types — aligned with Zod schemas in @decisionrecord/shared
+
 export type GateResult = {
+  org_id: string;
+  project_id: string;
+  repo: string;
+  branch: string;
   recordable: boolean;
-  confidence: number;
-  reasoning: string;
-  suggestedType?: string;
+  classification_reason: string;
+  risk_level: "low" | "medium" | "high";
+  suggested_mode: "quick" | "comprehensive";
+};
+
+export type ValidationIssue = {
+  code: string;
+  field: string;
+  message: string;
 };
 
 export type ValidationResult = {
   valid: boolean;
-  errors: string[];
-  warnings: string[];
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
 };
 
-export type GovernanceSnapshot = {
-  totalDecisions: number;
-  coveragePercent: number;
-  healthPercent: number;
-  driftRate: number;
-  byStatus: Record<string, number>;
-  byType: Record<string, number>;
+export type PublishResult = {
+  decision_id: string;
+  status: "Accepted";
+  supersede_updates: Array<{ old_id: string; superseded_by: string }>;
+  published_at: string;
+  version: number;
 };
+
+export type DraftResult = {
+  decision_id: string;
+  version: number;
+  status: "Proposed";
+};
+
+export type MonitoringSnapshot = Record<string, unknown>;
 
 export type Alert = {
   id: string;
@@ -90,12 +139,13 @@ export type OrgConstraint = {
   id: string;
   name: string;
   description: string;
-  enabled: boolean;
+  severity: "low" | "medium" | "high";
+  appliesTo: "org" | "repo" | "all";
+  status: "active" | "disabled";
 };
 
 export type SearchResult = {
   decisions: Decision[];
-  total: number;
 };
 
 export class DecisionOpsApiError extends Error {
@@ -127,6 +177,17 @@ function toProjectSummary(value: Record<string, unknown>): ProjectSummary {
     repoCount: Number(value.repoCount ?? 0),
     createdAt: String(value.createdAt ?? ""),
     updatedAt: String(value.updatedAt ?? ""),
+  };
+}
+
+function toProjectRepository(value: unknown): ProjectRepository {
+  if (typeof value === "string") return { repoId: value };
+  const obj = value as Record<string, unknown>;
+  return {
+    repoId: String(obj.repoId ?? obj.repo_id ?? ""),
+    installationId: obj.installationId ? String(obj.installationId) : undefined,
+    repoFullName: obj.repoFullName ? String(obj.repoFullName) : undefined,
+    defaultBranch: obj.defaultBranch ? String(obj.defaultBranch) : undefined,
   };
 }
 
@@ -165,7 +226,6 @@ export class DopsClient {
         headers: {
           accept: "application/json",
           authorization: `Bearer ${this.token}`,
-          ...(this.orgId ? { "x-org-id": this.orgId } : {}),
           ...(body ? { "content-type": "application/json" } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
@@ -193,8 +253,9 @@ export class DopsClient {
     return payload as T;
   }
 
-  // Auth & workspace
-  async loadUserContext(orgId?: string): Promise<UserContext> {
+  // ── Auth & workspace ──
+
+  async loadUserContext(): Promise<UserContext> {
     const payload = await this.request<Record<string, unknown>>("GET", "/v1/auth/me");
     const organizations = Array.isArray(payload.organizations)
       ? payload.organizations.map((v) => toOrganization(v as Record<string, unknown>))
@@ -229,79 +290,97 @@ export class DopsClient {
     return {
       project: toProjectSummary((payload.project ?? {}) as Record<string, unknown>),
       repositories: Array.isArray(payload.repositories)
-        ? payload.repositories.map((v) => String(v)).filter(Boolean)
+        ? payload.repositories.map(toProjectRepository)
         : [],
     };
   }
 
-  // Decision CRUD
-  async listDecisions(filters?: { status?: string; type?: string; limit?: number }): Promise<Decision[]> {
+  // ── Decision CRUD (decisions-policy routes) ──
+
+  async listDecisions(filters?: { status?: string; scopeType?: string; repoId?: string; source?: string; limit?: number }): Promise<Decision[]> {
     const params = new URLSearchParams();
-    if (this.projectId) params.set("project_id", this.projectId);
     if (filters?.status) params.set("status", filters.status);
-    if (filters?.type) params.set("type", filters.type);
+    if (filters?.scopeType) params.set("scopeType", filters.scopeType);
+    if (filters?.repoId) params.set("repoId", filters.repoId);
+    if (filters?.source) params.set("source", filters.source);
     if (filters?.limit) params.set("limit", String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : "";
     const payload = await this.request<Record<string, unknown>>("GET", `/v1/decisions${query}`);
     return (Array.isArray(payload.decisions) ? payload.decisions : []) as Decision[];
   }
 
-  async getDecision(id: string): Promise<Decision> {
-    return this.request<Decision>("GET", `/v1/decisions/${encodeURIComponent(id)}`);
+  async getDecision(id: string): Promise<DecisionDetail> {
+    const payload = await this.request<Record<string, unknown>>("GET", `/v1/decisions/${encodeURIComponent(id)}`);
+    return (payload.decision ?? payload) as DecisionDetail;
   }
 
-  async searchDecisions(terms: string, mode?: "semantic" | "keyword"): Promise<SearchResult> {
-    const params = new URLSearchParams({ q: terms });
-    if (this.projectId) params.set("project_id", this.projectId);
-    if (mode) params.set("mode", mode);
-    return this.request<SearchResult>("GET", `/v1/decisions/search?${params.toString()}`);
-  }
-
-  async createDecision(draft: DecisionDraft): Promise<{ decision_id: string; version: number }> {
-    return this.request<{ decision_id: string; version: number }>("POST", "/v1/decisions", {
-      ...draft,
-      project_id: this.projectId,
+  async searchDecisions(query: string, filters?: { scopeType?: string; repoId?: string; status?: string; limit?: number }): Promise<SearchResult> {
+    return this.request<SearchResult>("POST", "/v1/decisions/search", {
+      query,
+      ...filters,
     });
   }
 
-  // DecisionOps workflow
-  async prepareGate(taskSummary: string, changedPaths?: string[]): Promise<GateResult> {
-    return this.request<GateResult>("POST", "/v1/decisions/gate", {
+  async createDecision(input: CreateDecisionInput): Promise<{ decision: Decision }> {
+    return this.request<{ decision: Decision }>("POST", "/v1/decisions", input);
+  }
+
+  // ── DecisionOps workflow (decision-ops routes) ──
+
+  async prepareGate(repoRef: string, taskSummary: string, changedPaths?: string[], branch?: string): Promise<GateResult> {
+    return this.request<GateResult>("POST", "/v1/decision-ops/gate", {
+      repo_ref: repoRef,
       task_summary: taskSummary,
       changed_paths: changedPaths,
-      project_id: this.projectId,
+      branch,
     });
   }
 
-  async validateDecision(idOrDraft: string | DecisionDraft): Promise<ValidationResult> {
-    if (typeof idOrDraft === "string") {
-      return this.request<ValidationResult>("POST", `/v1/decisions/${encodeURIComponent(idOrDraft)}/validate`);
-    }
-    return this.request<ValidationResult>("POST", "/v1/decisions/validate", idOrDraft);
+  async searchDecisionOps(terms: string[], mode: "quick" | "comprehensive" | "custom" = "quick", options?: { org_id?: string; project_id?: string; limit?: number; include_body?: boolean }): Promise<unknown> {
+    return this.request<unknown>("POST", "/v1/decision-ops/search", {
+      org_id: options?.org_id,
+      project_id: options?.project_id,
+      terms,
+      mode,
+      limit: options?.limit,
+      include_body: options?.include_body,
+    });
   }
 
-  async publishDecision(id: string, version?: number): Promise<{ decision_id: string; version: number }> {
-    return this.request<{ decision_id: string; version: number }>(
-      "POST",
-      `/v1/decisions/${encodeURIComponent(id)}/publish`,
-      version ? { version } : undefined,
-    );
+  async createDraft(input: { org_id: string; project_id: string; title: string; context: string; decision: string; type?: string; options?: string[]; consequences?: string[]; related?: string[]; supersedes?: string[]; single_option_justification?: string; validation_plan?: { metric: string; baseline: string; target: string; by_date: string } }): Promise<DraftResult> {
+    return this.request<DraftResult>("POST", "/v1/decision-ops/draft", input);
   }
 
-  // Governance
-  async getGovernanceSnapshot(): Promise<GovernanceSnapshot> {
-    const params = this.projectId ? `?project_id=${encodeURIComponent(this.projectId)}` : "";
-    return this.request<GovernanceSnapshot>("GET", `/v1/governance/snapshot${params}`);
+  async validateDecision(input: { org_id: string; project_id: string; decision_id?: string; draft?: Record<string, unknown> }): Promise<ValidationResult> {
+    return this.request<ValidationResult>("POST", "/v1/decision-ops/validate", input);
   }
 
-  async getAlerts(): Promise<Alert[]> {
-    const params = this.projectId ? `?project_id=${encodeURIComponent(this.projectId)}` : "";
-    const payload = await this.request<Record<string, unknown>>("GET", `/v1/governance/alerts${params}`);
+  async publishDecision(input: { org_id: string; project_id: string; decision_id: string; expected_version: number }): Promise<PublishResult> {
+    return this.request<PublishResult>("POST", "/v1/decision-ops/publish", input);
+  }
+
+  async getDecisionOps(id: string, projectId?: string): Promise<unknown> {
+    const params = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    return this.request<unknown>("GET", `/v1/decision-ops/decisions/${encodeURIComponent(id)}${params}`);
+  }
+
+  // ── Monitoring (rules-monitoring routes) ──
+
+  async getMonitoringSnapshot(): Promise<MonitoringSnapshot> {
+    const payload = await this.request<Record<string, unknown>>("GET", "/v1/monitoring/snapshot");
+    return (payload.snapshot ?? payload) as MonitoringSnapshot;
+  }
+
+  async getAlerts(limit = 50): Promise<Alert[]> {
+    const payload = await this.request<Record<string, unknown>>("GET", `/v1/monitoring/alerts?limit=${limit}`);
     return (Array.isArray(payload.alerts) ? payload.alerts : []) as Alert[];
   }
 
-  async listConstraints(): Promise<OrgConstraint[]> {
-    const payload = await this.request<Record<string, unknown>>("GET", "/v1/governance/constraints");
+  // ── Admin (admin routes) ──
+
+  async listConstraints(includeDisabled = false): Promise<OrgConstraint[]> {
+    const params = includeDisabled ? "?includeDisabled=true" : "";
+    const payload = await this.request<Record<string, unknown>>("GET", `/v1/admin/org-constraints${params}`);
     return (Array.isArray(payload.constraints) ? payload.constraints : []) as OrgConstraint[];
   }
 }
@@ -309,7 +388,7 @@ export class DopsClient {
 // Re-export for backwards compatibility with controlPlane consumers
 export async function loadUserContext(options: { token: string; orgId?: string; apiBaseUrl?: string; signal?: AbortSignal }): Promise<UserContext> {
   const client = new DopsClient({ apiBaseUrl: options.apiBaseUrl, token: options.token, orgId: options.orgId });
-  return client.loadUserContext(options.orgId);
+  return client.loadUserContext();
 }
 
 export async function loadProjectRepositories(options: {

@@ -41,10 +41,8 @@ describe("DopsClient", () => {
   describe("constructor", () => {
     it("strips trailing slashes from apiBaseUrl", () => {
       const client = new DopsClient({ token: "tok", apiBaseUrl: "https://api.example.com///" });
-      // Verify by making a request and checking the URL
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decisions: [] })));
       client.listDecisions();
-      // The fetch call URL should not have trailing slashes before the path
     });
 
     it("uses default API base URL when not specified", () => {
@@ -58,7 +56,7 @@ describe("DopsClient", () => {
 
   describe("listDecisions", () => {
     it("calls GET /v1/decisions", async () => {
-      const decisions = [{ id: "d1", title: "Test Decision" }] as any[];
+      const decisions = [{ decisionId: "d1", title: "Test Decision" }] as any[];
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decisions })));
       const client = new DopsClient({ token: "tok" });
       const result = await client.listDecisions();
@@ -69,13 +67,20 @@ describe("DopsClient", () => {
 
     it("includes query params for filters", async () => {
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decisions: [] })));
-      const client = new DopsClient({ token: "tok", projectId: "proj_1" });
-      await client.listDecisions({ status: "proposed", type: "technical", limit: 5 });
+      const client = new DopsClient({ token: "tok" });
+      await client.listDecisions({ status: "proposed", scopeType: "org", limit: 5 });
       const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
       expect(calledUrl).toContain("status=proposed");
-      expect(calledUrl).toContain("type=technical");
+      expect(calledUrl).toContain("scopeType=org");
       expect(calledUrl).toContain("limit=5");
-      expect(calledUrl).toContain("project_id=proj_1");
+    });
+
+    it("does not include project_id in query params (org determined by auth token)", async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decisions: [] })));
+      const client = new DopsClient({ token: "tok", projectId: "proj_1" });
+      await client.listDecisions();
+      const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
+      expect(calledUrl).not.toContain("project_id");
     });
 
     it("returns empty array when decisions field is missing", async () => {
@@ -88,8 +93,8 @@ describe("DopsClient", () => {
 
   describe("getDecision", () => {
     it("calls GET /v1/decisions/:id", async () => {
-      const decision = { id: "dec_123", title: "My Decision" } as any;
-      fetchMock.mockImplementation(() => Promise.resolve(mockResponse(decision)));
+      const decision = { decisionId: "dec_123", title: "My Decision" } as any;
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decision })));
       const client = new DopsClient({ token: "tok" });
       const result = await client.getDecision("dec_123");
       expect(result).toEqual(decision as any);
@@ -98,7 +103,7 @@ describe("DopsClient", () => {
     });
 
     it("encodes special characters in id", async () => {
-      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ id: "a/b" })));
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decision: { decisionId: "a/b" } })));
       const client = new DopsClient({ token: "tok" });
       await client.getDecision("a/b");
       const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
@@ -107,27 +112,32 @@ describe("DopsClient", () => {
   });
 
   describe("searchDecisions", () => {
-    it("calls GET /v1/decisions/search with query params", async () => {
+    it("calls POST /v1/decisions/search with JSON body", async () => {
       fetchMock.mockImplementation(() =>
-        Promise.resolve(mockResponse({ decisions: [], total: 0 })),
+        Promise.resolve(mockResponse({ decisions: [] })),
       );
       const client = new DopsClient({ token: "tok" });
-      const result = await client.searchDecisions("database choice", "semantic");
-      expect(result).toEqual({ decisions: [], total: 0 });
-      const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
-      expect(calledUrl).toContain("q=database+choice");
-      expect(calledUrl).toContain("mode=semantic");
+      const result = await client.searchDecisions("database choice", { status: "proposed" });
+      expect(result).toEqual({ decisions: [] });
+      const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(calledUrl).toContain("/v1/decisions/search");
+      expect(calledOpts.method).toBe("POST");
+      const body = JSON.parse(calledOpts.body as string);
+      expect(body.query).toBe("database choice");
+      expect(body.status).toBe("proposed");
     });
   });
 
   describe("createDecision", () => {
-    it("calls POST /v1/decisions with body", async () => {
-      const resp = { decision_id: "dec_new", version: 1 };
+    it("calls POST /v1/decisions with nested body", async () => {
+      const resp = { decision: { decisionId: "dec_new", version: 1 } };
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse(resp)));
-      const client = new DopsClient({ token: "tok", projectId: "proj_1" });
+      const client = new DopsClient({ token: "tok" });
       const result = await client.createDecision({
         title: "New Decision",
         type: "technical",
+        scope: { repos: ["myrepo"] },
+        content: { origin: "manual" },
       });
       expect(result).toEqual(resp);
       const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -135,87 +145,99 @@ describe("DopsClient", () => {
       expect(calledOpts.method).toBe("POST");
       const body = JSON.parse(calledOpts.body as string);
       expect(body.title).toBe("New Decision");
-      expect(body.project_id).toBe("proj_1");
+      expect(body.scope.repos).toEqual(["myrepo"]);
     });
   });
 
   describe("prepareGate", () => {
-    it("calls POST /v1/decisions/gate", async () => {
-      const gate = { recordable: true, confidence: 0.9, reasoning: "Important" };
+    it("calls POST /v1/decision-ops/gate with repo_ref and task_summary", async () => {
+      const gate = {
+        org_id: "org_1", project_id: "proj_1", repo: "owner/repo", branch: "main",
+        recordable: true, classification_reason: "Structural change", risk_level: "medium" as const,
+        suggested_mode: "quick" as const,
+      };
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse(gate)));
       const client = new DopsClient({ token: "tok" });
-      const result = await client.prepareGate("Migrate to Postgres", ["db.ts"]);
-      expect(result).toEqual(gate);
-      const [, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const result = await client.prepareGate("owner/repo", "Migrate to Postgres", ["db.ts"]);
+      expect(result.recordable).toBe(true);
+      expect(result.classification_reason).toBe("Structural change");
+      expect(result.risk_level).toBe("medium");
+      const [calledUrl, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(calledUrl).toContain("/v1/decision-ops/gate");
       const body = JSON.parse(opts.body as string);
+      expect(body.repo_ref).toBe("owner/repo");
       expect(body.task_summary).toBe("Migrate to Postgres");
       expect(body.changed_paths).toEqual(["db.ts"]);
     });
   });
 
   describe("validateDecision", () => {
-    it("validates by id (string)", async () => {
+    it("calls POST /v1/decision-ops/validate", async () => {
       const validation = { valid: true, errors: [], warnings: [] };
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse(validation)));
       const client = new DopsClient({ token: "tok" });
-      const result = await client.validateDecision("dec_123");
-      expect(result).toEqual(validation);
+      const result = await client.validateDecision({ org_id: "org_1", project_id: "proj_1", decision_id: "dec_123" });
+      expect(result.valid).toBe(true);
       const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
-      expect(calledUrl).toContain("/v1/decisions/dec_123/validate");
+      expect(calledUrl).toContain("/v1/decision-ops/validate");
     });
 
-    it("validates a draft (object)", async () => {
-      const validation = { valid: false, errors: ["Missing context"], warnings: [] };
+    it("returns validation issues as objects", async () => {
+      const validation = {
+        valid: false,
+        errors: [{ code: "MISSING_FIELD", field: "context", message: "Context is required" }],
+        warnings: [{ code: "SHORT_TITLE", field: "title", message: "Title is short" }],
+      };
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse(validation)));
       const client = new DopsClient({ token: "tok" });
-      const result = await client.validateDecision({ title: "Draft", type: "technical" });
-      expect(result).toEqual(validation);
-      const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
-      expect(calledUrl).toContain("/v1/decisions/validate");
-      expect(calledUrl).not.toContain("/v1/decisions/validate/");
+      const result = await client.validateDecision({ org_id: "org_1", project_id: "proj_1", draft: { title: "X" } });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0].code).toBe("MISSING_FIELD");
+      expect(result.warnings[0].code).toBe("SHORT_TITLE");
     });
   });
 
   describe("publishDecision", () => {
-    it("calls POST /v1/decisions/:id/publish", async () => {
-      fetchMock.mockImplementation(() =>
-        Promise.resolve(mockResponse({ decision_id: "dec_1", version: 2 })),
-      );
+    it("calls POST /v1/decision-ops/publish", async () => {
+      const publishResult = {
+        decision_id: "dec_1", status: "Accepted" as const,
+        supersede_updates: [], published_at: "2024-01-01T00:00:00Z", version: 2,
+      };
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse(publishResult)));
       const client = new DopsClient({ token: "tok" });
-      const result = await client.publishDecision("dec_1", 1);
-      expect(result).toEqual({ decision_id: "dec_1", version: 2 });
-      const [, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const result = await client.publishDecision({
+        org_id: "org_1", project_id: "proj_1", decision_id: "dec_1", expected_version: 1,
+      });
+      expect(result.decision_id).toBe("dec_1");
+      expect(result.version).toBe(2);
+      const [calledUrl, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(calledUrl).toContain("/v1/decision-ops/publish");
       const body = JSON.parse(opts.body as string);
-      expect(body.version).toBe(1);
+      expect(body.expected_version).toBe(1);
     });
   });
 
-  describe("getGovernanceSnapshot", () => {
-    it("calls GET /v1/governance/snapshot", async () => {
-      const snapshot = {
-        totalDecisions: 10,
-        coveragePercent: 80,
-        healthPercent: 90,
-        driftRate: 5,
-        byStatus: {},
-        byType: {},
-      };
-      fetchMock.mockImplementation(() => Promise.resolve(mockResponse(snapshot)));
-      const client = new DopsClient({ token: "tok", projectId: "proj_1" });
-      const result = await client.getGovernanceSnapshot();
+  describe("getMonitoringSnapshot", () => {
+    it("calls GET /v1/monitoring/snapshot", async () => {
+      const snapshot = { totalDecisions: 10, coveragePercent: 80 };
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ snapshot })));
+      const client = new DopsClient({ token: "tok" });
+      const result = await client.getMonitoringSnapshot();
       expect(result).toEqual(snapshot);
       const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
-      expect(calledUrl).toContain("project_id=proj_1");
+      expect(calledUrl).toContain("/v1/monitoring/snapshot");
     });
   });
 
   describe("getAlerts", () => {
-    it("calls GET /v1/governance/alerts", async () => {
+    it("calls GET /v1/monitoring/alerts", async () => {
       const alerts = [{ id: "a1", severity: "warning" as const, message: "Drift detected", createdAt: "2024-01-01" }];
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ alerts })));
       const client = new DopsClient({ token: "tok" });
       const result = await client.getAlerts();
       expect(result).toEqual(alerts as any);
+      const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
+      expect(calledUrl).toContain("/v1/monitoring/alerts");
     });
 
     it("returns empty array when alerts field is missing", async () => {
@@ -223,6 +245,18 @@ describe("DopsClient", () => {
       const client = new DopsClient({ token: "tok" });
       const result = await client.getAlerts();
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("listConstraints", () => {
+    it("calls GET /v1/admin/org-constraints", async () => {
+      const constraints = [{ id: "c1", name: "No MySQL", severity: "high", appliesTo: "org", status: "active" }];
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ constraints })));
+      const client = new DopsClient({ token: "tok" });
+      const result = await client.listConstraints();
+      expect(result).toEqual(constraints as any);
+      const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
+      expect(calledUrl).toContain("/v1/admin/org-constraints");
     });
   });
 
@@ -257,13 +291,13 @@ describe("DopsClient", () => {
       }
     });
 
-    it("includes x-org-id header when orgId is set", async () => {
+    it("does not include x-org-id header (org determined by auth token)", async () => {
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ decisions: [] })));
       const client = new DopsClient({ token: "tok", orgId: "org_abc" });
       await client.listDecisions();
       const [, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
       const headers = opts.headers as Record<string, string>;
-      expect(headers["x-org-id"]).toBe("org_abc");
+      expect(headers["x-org-id"]).toBeUndefined();
     });
 
     it("sets authorization header with Bearer token", async () => {
