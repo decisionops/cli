@@ -83,6 +83,7 @@ main() {
   esac
 
   echo "dops installed to \${INSTALL_DIR}/dops"
+  echo "Congrats on your decision to install the dops CLI!"
   echo "Run 'dops --help' to get started."
 }
 
@@ -123,6 +124,7 @@ if ($currentPath -notlike "*$InstallDir*") {
 }
 
 Write-Host "dops installed to $InstallDir\\dops.exe"
+Write-Host "Congrats on your decision to install the dops CLI!"
 Write-Host "Run 'dops --help' to get started (restart terminal for PATH changes)."
 `;
 }
