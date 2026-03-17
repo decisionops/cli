@@ -35,8 +35,9 @@ main() {
   fi
 
   echo "Installing dops for ${PLATFORM}..."
+  echo "Downloading ${BINARY} from ${DOWNLOAD_URL}..."
   mkdir -p "$INSTALL_DIR"
-  curl -fsSL "$DOWNLOAD_URL" -o "${INSTALL_DIR}/dops"
+  curl -fL --progress-bar "$DOWNLOAD_URL" -o "${INSTALL_DIR}/dops"
   chmod +x "${INSTALL_DIR}/dops"
 
   # Add to PATH if needed

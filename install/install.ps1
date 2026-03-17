@@ -15,6 +15,7 @@ if ($Version -eq "latest") {
 }
 
 Write-Host "Installing dops for Windows..."
+Write-Host "Downloading $Binary from $DownloadUrl..."
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Invoke-WebRequest -Uri $DownloadUrl -OutFile "$InstallDir\dops.exe" -UseBasicParsing
 
