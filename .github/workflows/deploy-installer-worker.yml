@@ -32,6 +32,14 @@ jobs:
       - name: Verify installer templates
         run: bun test src/__tests__/installers.test.ts src/__tests__/update.test.ts
 
+      - name: Validate Cloudflare secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || (echo "CLOUDFLARE_API_TOKEN secret is empty or missing" >&2; exit 1)
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "CLOUDFLARE_ACCOUNT_ID secret is empty or missing" >&2; exit 1)
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         env:
