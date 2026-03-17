@@ -21,24 +21,21 @@ This README is organized around those questions.
 
 ## Install
 
+### Hosted installer
+
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://get.decisionops.dev/dops | sh
+curl -fsSL https://get.aidecisionops.com/dops | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://get.decisionops.dev/dops | iex
+irm https://get.aidecisionops.com/dops.ps1 | iex
 ```
 
-The install script downloads a precompiled binary to `~/.dops/bin` and adds it to your shell `PATH`.
-
-| Variable | Default | Description |
-|---|---|---|
-| `DOPS_INSTALL_DIR` | `~/.dops/bin` | Install location for the binary |
-| `DOPS_VERSION` | `latest` | Specific release tag such as `v0.1.0` |
+The hosted installer downloads the latest released `dops` binary from GitHub Releases into `~/.dops/bin` and adds that directory to your `PATH` when needed.
 
 ## Update
 
@@ -54,7 +51,25 @@ Pin to a specific release:
 dops update --version v0.1.0
 ```
 
-This re-runs the same installer flow used for first-time installation and writes the updated binary to the existing install directory unless you pass `--install-dir`.
+This re-runs the same hosted installer flow used for first-time installation and writes the updated binary to the existing install directory unless you pass `--install-dir`.
+
+### From source
+
+Requires [Bun](https://bun.sh).
+
+```bash
+git clone <repo-url>
+cd cli
+bun install
+bun run build    # produces dist/dops
+```
+
+Copy `dist/dops` to somewhere on your `PATH`, or run directly with `bun run src/cli.ts`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `DOPS_INSTALL_DIR` | `~/.dops/bin` | Install location for the binary |
+| `DOPS_VERSION` | `latest` | Specific release tag such as `v0.1.0` |
 
 ## Five-minute setup
 

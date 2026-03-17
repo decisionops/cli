@@ -1,0 +1,40 @@
+name: Deploy Installer Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-installer-worker.yml"
+      - "src/installers/**"
+      - "worker/**"
+      - "wrangler.jsonc"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify installer templates
+        run: bun test src/__tests__/installers.test.ts src/__tests__/update.test.ts
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

@@ -2,10 +2,10 @@
 set -e
 
 # dops installer for macOS/Linux
-# Usage: curl -fsSL https://get.decisionops.dev/dops | sh
+# Usage: curl -fsSL https://get.aidecisionops.com/dops | sh
 
 INSTALL_DIR="${DOPS_INSTALL_DIR:-$HOME/.dops/bin}"
-REPO="decisionops/dops"
+REPO="decisionops/cli"
 VERSION="${DOPS_VERSION:-latest}"
 
 detect_platform() {

@@ -6,7 +6,7 @@ describe("buildUpdateInvocation", () => {
   it("uses the shell installer on unix-like platforms", () => {
     const invocation = buildUpdateInvocation({}, "darwin");
     expect(invocation.command).toBe("sh");
-    expect(invocation.args).toEqual(["-c", "curl -fsSL https://get.decisionops.dev/dops | sh"]);
+    expect(invocation.args).toEqual(["-c", "curl -fsSL https://get.aidecisionops.com/dops | sh"]);
   });
 
   it("uses powershell on windows", () => {
@@ -17,7 +17,7 @@ describe("buildUpdateInvocation", () => {
       "-ExecutionPolicy",
       "Bypass",
       "-Command",
-      "irm https://get.decisionops.dev/dops | iex",
+      "irm https://get.aidecisionops.com/dops.ps1 | iex",
     ]);
   });
 

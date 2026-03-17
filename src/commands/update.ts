@@ -1,7 +1,7 @@
 import os from "node:os";
 import { spawn } from "node:child_process";
 
-const INSTALLER_URL = "https://get.decisionops.dev/dops";
+import { POWERSHELL_INSTALLER_URL, SHELL_INSTALLER_URL } from "../installers/templates.js";
 
 export type UpdateFlags = {
   version?: string;
@@ -24,14 +24,14 @@ export function buildUpdateInvocation(flags: UpdateFlags = {}, platform = os.pla
   if (platform === "win32") {
     return {
       command: "powershell",
-      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${INSTALLER_URL} | iex`],
+      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${POWERSHELL_INSTALLER_URL} | iex`],
       env,
     };
   }
 
   return {
     command: "sh",
-    args: ["-c", `curl -fsSL ${INSTALLER_URL} | sh`],
+    args: ["-c", `curl -fsSL ${SHELL_INSTALLER_URL} | sh`],
     env,
   };
 }

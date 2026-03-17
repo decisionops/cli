@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/config-schema.json",
+  "name": "decisionrecord-get",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-03-16",
+  "workers_dev": false,
+  "vars": {
+    "PUBLIC_INSTALL_BASE_URL": "https://get.aidecisionops.com",
+    "RELEASE_REPO_SLUG": "decisionops/cli"
+  }
+}

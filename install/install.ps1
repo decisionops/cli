@@ -1,10 +1,10 @@
 # dops installer for Windows
-# Usage: irm https://get.decisionops.dev/dops | iex
+# Usage: irm https://get.aidecisionops.com/dops.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
 $InstallDir = if ($env:DOPS_INSTALL_DIR) { $env:DOPS_INSTALL_DIR } else { "$env:USERPROFILE\.dops\bin" }
-$Repo = "decisionops/dops"
+$Repo = "decisionops/cli"
 $Version = if ($env:DOPS_VERSION) { $env:DOPS_VERSION } else { "latest" }
 $Binary = "dops-windows-x64.exe"
 
