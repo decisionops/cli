@@ -79,8 +79,211 @@ type RefreshOptions = OAuthOptions & { signal?: AbortSignal };
 export const DEFAULT_API_BASE_URL = "https://api.aidecisionops.com";
 export const DEFAULT_OAUTH_ISSUER_URL = "https://auth.aidecisionops.com/oauth";
 export const DEFAULT_OAUTH_CLIENT_ID = "decisionops-cli";
-export const DEFAULT_OAUTH_SCOPES = ["mcp:read", "mcp:call", "decisions:read", "decisions:write", "decisions:approve", "admin:read"];
+export const DEFAULT_OAUTH_SCOPES = ["decisions:read", "decisions:write", "decisions:approve", "metrics:read", "admin:read"];
 export const DEFAULT_OAUTH_API_AUDIENCE = "https://api.aidecisionops.com/v1";
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderOAuthCallbackHtml(params: Record<string, string>): { html: string; statusCode: number } {
+  const failed = Boolean(params.error);
+  const title = failed ? "DecisionOps login failed" : "DecisionOps login complete";
+  const badgeLabel = failed ? "Authorization failed" : "Authorization complete";
+  const summary = failed
+    ? escapeHtml(params.error_description ?? params.error ?? "The browser handoff could not be completed.")
+    : "You can return to the terminal. Your local DecisionOps client has received the login response.";
+  const detail = failed
+    ? "Retry the sign-in command from the terminal, then approve the browser prompt again."
+    : "This tab can be closed once you are ready.";
+  const accent = failed ? "#b42318" : "#067647";
+  const accentSoft = failed ? "rgba(217, 45, 32, 0.12)" : "rgba(6, 118, 71, 0.12)";
+  const panelBorder = failed ? "rgba(217, 45, 32, 0.22)" : "rgba(6, 118, 71, 0.22)";
+  const icon = failed
+    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.75a9.25 9.25 0 1 0 9.25 9.25A9.26 9.26 0 0 0 12 2.75Zm0 5.1a1.1 1.1 0 0 1 1.1 1.1v4.25a1.1 1.1 0 1 1-2.2 0V8.95a1.1 1.1 0 0 1 1.1-1.1Zm0 9.2a1.35 1.35 0 1 1 1.35-1.35A1.35 1.35 0 0 1 12 17.05Z" fill="currentColor"/></svg>`
+    : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.75a9.25 9.25 0 1 0 9.25 9.25A9.26 9.26 0 0 0 12 2.75Zm4.34 7.19-4.77 5.52a1.1 1.1 0 0 1-1.61.06l-2.31-2.31a1.1 1.1 0 0 1 1.56-1.56l1.47 1.47 4-4.62a1.1 1.1 0 0 1 1.66 1.44Z" fill="currentColor"/></svg>`;
+
+  return {
+    statusCode: failed ? 400 : 200,
+    html: `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f1ea;
+        --bg-accent: #e6f4ec;
+        --surface: rgba(255, 255, 255, 0.94);
+        --surface-border: rgba(41, 37, 36, 0.12);
+        --text: #1c1917;
+        --muted: #57534e;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.15), transparent 34%),
+          radial-gradient(circle at top right, rgba(6, 118, 71, 0.14), transparent 28%),
+          linear-gradient(180deg, var(--bg) 0%, #f8f7f4 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .card {
+        width: min(100%, 560px);
+        background: var(--surface);
+        border: 1px solid var(--surface-border);
+        border-radius: 24px;
+        padding: 24px;
+        box-shadow: 0 20px 45px rgba(28, 25, 23, 0.08);
+        backdrop-filter: blur(12px);
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .brand-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: #1c1917;
+        color: #fafaf9;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: ${accentSoft};
+        color: ${accent};
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .badge svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      h1 {
+        margin: 18px 0 10px;
+        font-size: clamp(28px, 5vw, 40px);
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+      }
+
+      p {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .notice {
+        margin-top: 24px;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid ${panelBorder};
+        background: ${accentSoft};
+      }
+
+      .notice strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--text);
+        font-size: 15px;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .button {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        background: #1c1917;
+        color: #fafaf9;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .footnote {
+        font-size: 13px;
+      }
+
+      @media (max-width: 640px) {
+        .card {
+          padding: 20px;
+          border-radius: 20px;
+        }
+
+        .actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="brand">
+        <div class="brand-mark">Do</div>
+        <span>DecisionOps local sign-in</span>
+      </div>
+      <div class="badge">${icon}<span>${badgeLabel}</span></div>
+      <h1>${title}</h1>
+      <p>${summary}</p>
+      <section class="notice" aria-live="polite">
+        <strong>${failed ? "What happened" : "What to do next"}</strong>
+        <p>${detail}</p>
+      </section>
+      <div class="actions">
+        <button class="button" type="button" onclick="window.close()">Close this tab</button>
+        <p class="footnote">If the tab does not close automatically, you can leave it and continue from the terminal.</p>
+      </div>
+    </main>
+  </body>
+</html>`,
+  };
+}
 
 function authPath(): string {
   return path.join(decisionopsHome(), "auth.json");
@@ -362,11 +565,7 @@ async function startOAuthCallbackServer(callbackPort = 0, timeoutMs = 120_000, s
       try {
         const fullUrl = req.url;
         const params = extractCallbackParams(fullUrl);
-
-        const statusCode = params.error ? 400 : 200;
-        const html = params.error
-          ? "<html><body><h1>DecisionOps login failed</h1><p>You can return to the terminal.</p></body></html>"
-          : "<html><body><h1>DecisionOps login complete</h1><p>You can return to the terminal.</p></body></html>";
+        const { html, statusCode } = renderOAuthCallbackHtml(params);
 
         server.stop();
         callbackResolve({ callbackUrl: fullUrl, params });

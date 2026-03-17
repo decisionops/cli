@@ -157,6 +157,15 @@ export class DecisionOpsApiError extends Error {
   }
 }
 
+function formatAuthErrorMessage(message: string): string {
+  return [
+    "Your saved DecisionOps login is no longer valid.",
+    "Run `dops login` and try again.",
+    "",
+    `Details: ${message}`,
+  ].join("\n");
+}
+
 function toOrganization(value: Record<string, unknown>): UserOrganization {
   const role = String(value.role ?? "reader");
   return {
@@ -248,7 +257,10 @@ export class DopsClient {
       const message = typeof payload === "string"
         ? payload
         : String((payload as Record<string, unknown>).error ?? (payload as Record<string, unknown>).message ?? response.statusText);
-      throw new DecisionOpsApiError(response.status, message || `Request failed (${response.status})`);
+      const finalMessage = response.status === 401 || response.status === 403
+        ? formatAuthErrorMessage(message || response.statusText || `Request failed (${response.status})`)
+        : message || `Request failed (${response.status})`;
+      throw new DecisionOpsApiError(response.status, finalMessage);
     }
     return payload as T;
   }

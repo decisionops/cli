@@ -273,8 +273,23 @@ describe("DopsClient", () => {
         expect(err).toBeInstanceOf(DecisionOpsApiError);
         const apiErr = err as DecisionOpsApiError;
         expect(apiErr.status).toBe(401);
-        expect(apiErr.message).toBe("Unauthorized");
+        expect(apiErr.message).toContain("Run `dops login`");
+        expect(apiErr.message).toContain("Details: Unauthorized");
       }
+    });
+
+    it("includes login guidance for invalid saved tokens", async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(mockResponse(
+          { error: "Invalid access token. Signature verification failed." },
+          { status: 401, statusText: "Unauthorized" },
+        )),
+      );
+      const client = new DopsClient({ token: "bad-token" });
+      await expect(client.listDecisions()).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining("Run `dops login`"),
+      });
     });
 
     it("throws DecisionOpsApiError with status 0 on network failure", async () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import process from "node:process";
 
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { z } from "zod";
 
 import { isCancelError } from "./ui/cancel.js";
@@ -45,10 +45,11 @@ addExamples(
   .option("--client-id <id>", "OAuth client id")
   .option("--audience <value>", "OAuth audience")
   .option("--scopes <list>", "Comma or space separated OAuth scopes")
-  .option("--web", "Use browser-based PKCE login")
-  .option("--with-token", "Save a raw access token instead of using OAuth")
-  .option("--token <token>", "Access token value for --with-token")
+  .option("--web", "Use browser-based PKCE login (default)")
+  .addOption(new Option("--with-token", "Use an already-issued bearer access token").hideHelp())
+  .addOption(new Option("--token <token>", "Bearer access token value for --with-token").hideHelp())
   .option("--no-browser", "Do not attempt to launch a browser automatically")
+  .option("--force", "Start a new browser login even if a saved session already exists")
   .option("--clear", "Remove saved login state")
   .action(async (flags) => {
     const { runLogin } = await import("./commands/login.js");
@@ -57,7 +58,6 @@ addExamples(
   [
     "dops login",
     "dops login --web",
-    "dops login --with-token --token dop_...",
   ],
 );
 

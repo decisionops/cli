@@ -7,7 +7,7 @@ export async function runStatus(flags: { repoPath?: string }): Promise<void> {
   const client = await DopsClient.fromAuth(repoPath);
 
   const [snapshot, alerts] = await withSpinner("Loading governance data...", () =>
-    Promise.all([client.getGovernanceSnapshot(), client.getAlerts()]),
+    Promise.all([client.getMonitoringSnapshot(), client.getAlerts()]),
   );
 
   console.log("Governance Snapshot");

@@ -41,6 +41,7 @@ describe("CLI entry point", () => {
     const output = result.stdout;
     expect(output).toContain("Authenticate");
     expect(output).toContain("--api-base-url");
+    expect(output).not.toContain("--with-token");
   });
 
   it("prints help for install subcommand", () => {
