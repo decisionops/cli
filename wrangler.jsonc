@@ -1,7 +1,7 @@
 {
   "$schema": "https://developers.cloudflare.com/workers/wrangler/config-schema.json",
   "name": "decisionops-get-installer",
-  "main": "worker/src/index.ts",
+  "main": "worker/src/index.js",
   "compatibility_date": "2026-03-16",
   "workers_dev": false,
   "routes": [

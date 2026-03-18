@@ -55,16 +55,17 @@ This re-runs the same hosted installer flow used for first-time installation and
 
 ### From source
 
-Requires [Bun](https://bun.sh).
+Requires Python 3.13+.
 
 ```bash
 git clone <repo-url>
 cd cli
-bun install
-bun run build    # produces dist/dops
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
 ```
 
-Copy `dist/dops` to somewhere on your `PATH`, or run directly with `bun run src/cli.ts`.
+Run directly with `python -m dops` or the installed `dops` console script.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -331,24 +332,21 @@ Written by `dops login`. This stores CLI auth state and is managed by the CLI.
 
 ## Development
 
-Requires [Bun](https://bun.sh).
+Requires Python 3.13+.
 
 ```bash
-bun install
-bun run src/cli.ts --help
-bun run typecheck
-bun test
-bun run build
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+python -m dops --help
+python -m unittest discover -s tests -v
 ```
 
 ### Cross-platform binaries
 
 ```bash
-bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile dist/dops-darwin-arm64
-bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile dist/dops-darwin-x64
-bun build src/cli.ts --compile --target=bun-linux-x64 --outfile dist/dops-linux-x64
-bun build src/cli.ts --compile --target=bun-linux-arm64 --outfile dist/dops-linux-arm64
-bun build src/cli.ts --compile --target=bun-windows-x64 --outfile dist/dops-windows-x64.exe
+pip install pyinstaller
+pyinstaller --onefile --name dops dops_bootstrap.py
 ```
 
 ## License

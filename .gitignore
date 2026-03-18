@@ -5,3 +5,7 @@ dist/
 .decisionops/
 assets/*.tape
 .env.cloudflaresecrets
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/

@@ -11,39 +11,54 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            artifact_name: dops-linux-x64
+            binary_path: dist/dops
+          - runner: ubuntu-24.04-arm
+            artifact_name: dops-linux-arm64
+            binary_path: dist/dops
+          - runner: macos-13
+            artifact_name: dops-darwin-x64
+            binary_path: dist/dops
+          - runner: macos-14
+            artifact_name: dops-darwin-arm64
+            binary_path: dist/dops
+          - runner: windows-latest
+            artifact_name: dops-windows-x64.exe
+            binary_path: dist/dops.exe
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          bun-version: latest
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
 
       - name: Run tests
-        run: bun test
+        run: python -m unittest discover -s tests -v
 
-      - name: Build release binaries
+      - name: Build release binary
         run: |
-          mkdir -p dist
-          bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile dist/dops-darwin-arm64
-          bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile dist/dops-darwin-x64
-          bun build src/cli.ts --compile --target=bun-linux-x64 --outfile dist/dops-linux-x64
-          bun build src/cli.ts --compile --target=bun-linux-arm64 --outfile dist/dops-linux-arm64
-          bun build src/cli.ts --compile --target=bun-windows-x64 --outfile dist/dops-windows-x64.exe
-          sha256sum dist/* > dist/checksums.txt
+          pyinstaller --onefile --name dops dops_bootstrap.py
 
-      - name: Publish GitHub release
+      - name: Rename artifact
+        shell: bash
+        run: |
+          cp "${{ matrix.binary_path }}" "dist/${{ matrix.artifact_name }}"
+
+      - name: Publish GitHub release artifact
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/dops-darwin-arm64
-            dist/dops-darwin-x64
-            dist/dops-linux-x64
-            dist/dops-linux-arm64
-            dist/dops-windows-x64.exe
-            dist/checksums.txt
+          files: dist/${{ matrix.artifact_name }}
