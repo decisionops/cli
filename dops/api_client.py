@@ -10,6 +10,7 @@ from typing import Any
 
 from .auth import ensure_valid_auth_state, read_auth_state
 from .config import DEFAULT_API_BASE_URL
+from .http import default_user_agent
 from .manifest import read_manifest
 from .tls import create_ssl_context
 
@@ -58,7 +59,11 @@ class DopsClient:
 
     def request(self, method: str, path: str, body: Any | None = None) -> Any:
         url = f"{self.api_base_url}{path}"
-        headers = {"accept": "application/json", "authorization": f"Bearer {self.token}"}
+        headers = {
+            "accept": "application/json",
+            "authorization": f"Bearer {self.token}",
+            "user-agent": default_user_agent(),
+        }
         payload = None
         if body is not None:
             headers["content-type"] = "application/json"

@@ -26,6 +26,7 @@ from .config import (
     DEFAULT_OAUTH_SCOPES,
     decisionops_home,
 )
+from .http import default_user_agent
 from .tls import create_ssl_context
 
 
@@ -190,7 +191,8 @@ def _parse_json_response(response) -> dict[str, Any]:
 
 
 def _request_json(url: str, method: str = "GET", headers: dict[str, str] | None = None, body: bytes | None = None, timeout: float = 10.0) -> dict[str, Any]:
-    request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+    request_headers = {"user-agent": default_user_agent(), **(headers or {})}
+    request = urllib.request.Request(url, data=body, method=method, headers=request_headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout, context=create_ssl_context()) as response:
             return _parse_json_response(response)
