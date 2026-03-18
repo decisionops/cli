@@ -33,7 +33,11 @@ append_path_entry() {
 }
 
 print_post_install_notes() {
-  INSTALLED_VERSION="$("$INSTALL_PATH" --version 2>/dev/null || echo "unknown")"
+  RELEASE_VERSION="$1"
+  INSTALLED_VERSION="$("$INSTALL_PATH" --version 2>/dev/null || true)"
+  if [ -z "$INSTALLED_VERSION" ]; then
+    INSTALLED_VERSION="\${RELEASE_VERSION:-unknown}"
+  fi
   CURRENT_DOPS="$(command -v dops 2>/dev/null || true)"
 
   echo "Installed version: \${INSTALLED_VERSION}"
@@ -74,8 +78,13 @@ main() {
   echo "Installing dops for \${PLATFORM}..."
   echo "Downloading \${BINARY} from \${DOWNLOAD_URL}..."
   mkdir -p "$INSTALL_DIR"
-  curl -fL --progress-bar "$DOWNLOAD_URL" -o "$INSTALL_PATH"
-  chmod +x "$INSTALL_PATH"
+  TMP_PATH="$(mktemp "\${INSTALL_DIR}/.dops.XXXXXX")"
+  trap 'rm -f "$TMP_PATH"' EXIT INT TERM
+  FINAL_URL="$(curl -fsSL --progress-bar -w '%{url_effective}' "$DOWNLOAD_URL" -o "$TMP_PATH")"
+  RESOLVED_VERSION="$(printf '%s' "$FINAL_URL" | sed -n 's#^.*/download/\\([^/]*\\)/.*#\\1#p')"
+  chmod +x "$TMP_PATH"
+  mv "$TMP_PATH" "$INSTALL_PATH"
+  trap - EXIT INT TERM
 
   # Add to PATH if needed
   case ":$PATH:" in
@@ -97,7 +106,7 @@ main() {
   esac
 
   echo "dops installed to \${INSTALL_PATH}"
-  print_post_install_notes
+  print_post_install_notes "$RESOLVED_VERSION"
   echo "Congrats on your decision to install the dops CLI!"
   echo "Run 'dops --help' to get started."
 }

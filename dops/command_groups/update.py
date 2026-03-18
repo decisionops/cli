@@ -3,13 +3,17 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
+import urllib.request
 from pathlib import Path
 
+from .. import __version__
 from ..argparse_utils import DopsHelpFormatter, add_examples
 from ..installers.templates import POWERSHELL_INSTALLER_URL, SHELL_INSTALLER_URL
+from ..tls import create_ssl_context
 
 
 def _installed_binary_path(install_dir: str | None) -> Path:
@@ -18,11 +22,51 @@ def _installed_binary_path(install_dir: str | None) -> Path:
     return target_dir / binary_name
 
 
+def _release_artifact_name() -> str:
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    if system.startswith("darwin"):
+        os_name = "darwin"
+    elif system.startswith("linux"):
+        os_name = "linux"
+    elif system.startswith("win"):
+        os_name = "windows"
+    else:
+        os_name = system
+
+    if machine in {"x86_64", "amd64"}:
+        arch = "x64"
+    elif machine in {"aarch64", "arm64"}:
+        arch = "arm64"
+    else:
+        arch = machine
+
+    name = f"dops-{os_name}-{arch}"
+    return f"{name}.exe" if os_name == "windows" else name
+
+
+def _resolve_target_release(version: str) -> str | None:
+    artifact = _release_artifact_name()
+    if version != "latest":
+        return version
+    url = f"https://github.com/decisionops/cli/releases/latest/download/{artifact}"
+    request = urllib.request.Request(url, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=10, context=create_ssl_context()) as response:
+            final_url = response.geturl()
+    except Exception:
+        return None
+    match = re.search(r"/releases/download/([^/]+)/", final_url)
+    return match.group(1) if match else None
+
+
 def run_update(flags: argparse.Namespace) -> None:
     from ..ui import console
 
     target_version = flags.version or "latest"
-    console.print(f"Updating dops to {target_version}...")
+    current_version = __version__
+    resolved_target = _resolve_target_release(target_version) or target_version
+    console.print(f"Updating dops from {current_version} to {resolved_target}...")
     env = os.environ.copy()
     if flags.version:
         env["DOPS_VERSION"] = flags.version
@@ -38,16 +82,21 @@ def run_update(flags: argparse.Namespace) -> None:
 
     installed_binary = _installed_binary_path(flags.install_dir)
     if installed_binary.exists():
-        version_completed = subprocess.run(
-            [str(installed_binary), "--version"],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if version_completed.returncode == 0:
+        try:
+            version_completed = subprocess.run(
+                [str(installed_binary), "--version"],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            version_completed = None
+        if version_completed and version_completed.returncode == 0:
             console.print(f"Installed binary: {installed_binary} ({version_completed.stdout.strip()})")
         else:
-            console.print(f"Installed binary: {installed_binary}")
+            fallback_label = f" ({resolved_target})" if resolved_target else ""
+            console.print(f"Installed binary: {installed_binary}{fallback_label}")
     resolved_binary = shutil.which("dops")
     if resolved_binary and Path(resolved_binary).resolve() != installed_binary.resolve():
         console.print(
