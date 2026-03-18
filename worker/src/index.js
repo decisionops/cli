@@ -65,14 +65,26 @@ detect_platform() {
   echo "\${OS}-\${ARCH}"
 }
 
+resolve_version() {
+  if [ "$VERSION" != "latest" ]; then
+    echo "$VERSION"
+    return
+  fi
+  LOCATION="$(curl -fsS -o /dev/null -w '%{redirect_url}' "https://github.com/\${REPO}/releases/latest/download/\${BINARY}")"
+  if [ -n "$LOCATION" ]; then
+    printf '%s' "$LOCATION" | sed -n 's#^.*/download/\\([^/]*\\)/.*#\\1#p'
+  fi
+}
+
 main() {
   PLATFORM=$(detect_platform)
   BINARY="dops-\${PLATFORM}"
 
-  if [ "$VERSION" = "latest" ]; then
-    DOWNLOAD_URL="https://github.com/\${REPO}/releases/latest/download/\${BINARY}"
+  RESOLVED_VERSION="$(resolve_version)"
+  if [ -n "$RESOLVED_VERSION" ] && [ "$RESOLVED_VERSION" != "latest" ]; then
+    DOWNLOAD_URL="https://github.com/\${REPO}/releases/download/\${RESOLVED_VERSION}/\${BINARY}"
   else
-    DOWNLOAD_URL="https://github.com/\${REPO}/releases/download/\${VERSION}/\${BINARY}"
+    DOWNLOAD_URL="https://github.com/\${REPO}/releases/latest/download/\${BINARY}"
   fi
 
   echo "Installing dops for \${PLATFORM}..."
@@ -80,9 +92,17 @@ main() {
   mkdir -p "$INSTALL_DIR"
   TMP_PATH="$(mktemp "\${INSTALL_DIR}/.dops.XXXXXX")"
   trap 'rm -f "$TMP_PATH"' EXIT INT TERM
-  FINAL_URL="$(curl -fsSL --progress-bar -w '%{url_effective}' "$DOWNLOAD_URL" -o "$TMP_PATH")"
-  RESOLVED_VERSION="$(printf '%s' "$FINAL_URL" | sed -n 's#^.*/download/\\([^/]*\\)/.*#\\1#p')"
+  curl -fSL --progress-bar "$DOWNLOAD_URL" -o "$TMP_PATH"
   chmod +x "$TMP_PATH"
+
+  # Verify the binary works before installing
+  if ! "$TMP_PATH" --version >/dev/null 2>&1; then
+    echo "Error: downloaded binary failed verification. The download may be corrupt." >&2
+    echo "Please try again. If the problem persists, report it at https://github.com/\${REPO}/issues" >&2
+    rm -f "$TMP_PATH"
+    exit 1
+  fi
+
   mv "$TMP_PATH" "$INSTALL_PATH"
   trap - EXIT INT TERM
 
