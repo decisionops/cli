@@ -5,6 +5,7 @@ import argparse
 from . import __version__
 from .argparse_utils import DopsHelpFormatter, add_examples
 from .command_groups import register_all_commands
+from .command_groups.update import run_update
 from .ui import CancelledError, error_console
 
 
@@ -14,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=DopsHelpFormatter,
         description="dops — repo-anchored CLI for working with decisions\n\nRespects NO_COLOR and FORCE_COLOR environment variables.",
     )
+    parser.add_argument("--update", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command")
     add_examples(
@@ -33,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "update", False):
+        args.version = getattr(args, "version", None)
+        args.install_dir = getattr(args, "install_dir", None)
+        args.func = run_update
     if not hasattr(args, "func"):
         parser.print_help()
         return 0

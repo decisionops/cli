@@ -7,6 +7,32 @@ set -e
 INSTALL_DIR="${DOPS_INSTALL_DIR:-$HOME/.dops/bin}"
 REPO="decisionops/cli"
 VERSION="${DOPS_VERSION:-latest}"
+INSTALL_PATH="${INSTALL_DIR}/dops"
+
+append_path_entry() {
+  RC="$1"
+  LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
+  if [ -f "$RC" ] && grep -Fqs "$LINE" "$RC"; then
+    return
+  fi
+  echo "" >> "$RC"
+  echo "# dops" >> "$RC"
+  echo "$LINE" >> "$RC"
+  echo "Added ${INSTALL_DIR} to PATH in ${RC}"
+}
+
+print_post_install_notes() {
+  INSTALLED_VERSION="$("$INSTALL_PATH" --version 2>/dev/null || echo "unknown")"
+  CURRENT_DOPS="$(command -v dops 2>/dev/null || true)"
+
+  echo "Installed version: ${INSTALLED_VERSION}"
+  if [ -n "$CURRENT_DOPS" ] && [ "$CURRENT_DOPS" != "$INSTALL_PATH" ]; then
+    echo ""
+    echo "Note: your current shell resolves dops to ${CURRENT_DOPS}"
+    echo "The newly installed binary is at ${INSTALL_PATH}"
+    echo "Run '${INSTALL_PATH} --version' now, or start a new shell to pick up the updated PATH."
+  fi
+}
 
 detect_platform() {
   OS="$(uname -s)"
@@ -37,8 +63,8 @@ main() {
   echo "Installing dops for ${PLATFORM}..."
   echo "Downloading ${BINARY} from ${DOWNLOAD_URL}..."
   mkdir -p "$INSTALL_DIR"
-  curl -fL --progress-bar "$DOWNLOAD_URL" -o "${INSTALL_DIR}/dops"
-  chmod +x "${INSTALL_DIR}/dops"
+  curl -fL --progress-bar "$DOWNLOAD_URL" -o "$INSTALL_PATH"
+  chmod +x "$INSTALL_PATH"
 
   # Add to PATH if needed
   case ":$PATH:" in
@@ -52,17 +78,15 @@ main() {
         *) RC="" ;;
       esac
       if [ -n "$RC" ]; then
-        echo "" >> "$RC"
-        echo "# dops" >> "$RC"
-        echo "export PATH=\"${INSTALL_DIR}:\$PATH\"" >> "$RC"
-        echo "Added ${INSTALL_DIR} to PATH in ${RC}"
+        append_path_entry "$RC"
       else
         echo "Add ${INSTALL_DIR} to your PATH manually."
       fi
       ;;
   esac
 
-  echo "dops installed to ${INSTALL_DIR}/dops"
+  echo "dops installed to ${INSTALL_PATH}"
+  print_post_install_notes
   echo "Congrats on your decision to install the dops CLI!"
   echo "Run 'dops --help' to get started."
 }

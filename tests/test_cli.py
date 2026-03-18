@@ -37,6 +37,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+$")
 
+    def test_update_flag_alias(self) -> None:
+        result = run_cli("--help")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("dops update", result.stdout)
+
     def test_login_help_hides_token_flags(self) -> None:
         result = run_cli("login", "--help")
         self.assertEqual(result.returncode, 0)
