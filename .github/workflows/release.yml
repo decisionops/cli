@@ -46,6 +46,12 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
+      - name: Stamp release version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          printf '__version__ = "%s"\n' "$VERSION" > dops/_build_version.py
+
       - name: Run tests
         run: python -m unittest discover -s tests -v
 

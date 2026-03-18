@@ -5,6 +5,7 @@ import shutil
 import stat
 import tempfile
 import unittest
+from pathlib import Path
 
 from dops.auth import AuthState, clear_auth_state, is_expired, read_auth_state, save_token_auth_state, write_auth_state
 
@@ -48,6 +49,9 @@ class AuthTests(unittest.TestCase):
 
     def test_auth_file_permissions_are_restricted(self) -> None:
         path = write_auth_state(self.make_auth_state())
+        if os.name == "nt":
+            self.assertTrue(Path(path).exists())
+            return
         mode = os.stat(path).st_mode & 0o777
         self.assertEqual(mode, stat.S_IRUSR | stat.S_IWUSR)
 

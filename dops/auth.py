@@ -256,14 +256,54 @@ def _resolve_oauth_options(options: dict[str, Any] | None = None) -> dict[str, A
     }
 
 
+def _metadata_candidates(issuer_url: str) -> list[str]:
+    parsed = urllib.parse.urlsplit(issuer_url.rstrip("/"))
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    issuer_path = parsed.path.rstrip("/")
+    candidates: list[str] = []
+
+    # RFC 8414: when the issuer has a path component, insert `/.well-known`
+    # before the issuer path instead of appending it after.
+    if issuer_path:
+        candidates.extend(
+            [
+                f"{base}/.well-known/oauth-authorization-server{issuer_path}",
+                f"{base}/.well-known/openid-configuration{issuer_path}",
+            ]
+        )
+
+    # Compatibility fallback for providers that still publish discovery
+    # documents relative to the issuer URL.
+    candidates.extend(
+        [
+            f"{issuer_url.rstrip('/')}/.well-known/oauth-authorization-server",
+            f"{issuer_url.rstrip('/')}/.well-known/openid-configuration",
+        ]
+    )
+
+    deduped: list[str] = []
+    for candidate in candidates:
+        if candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
+
+
+def _oauth_endpoint(issuer_url: str, endpoint: str) -> str:
+    parsed = urllib.parse.urlsplit(issuer_url.rstrip("/"))
+    path = parsed.path.rstrip("/")
+    if path.endswith("/oauth") or path == "/oauth":
+        next_path = f"{path}/{endpoint}"
+    elif path:
+        next_path = f"{path}/oauth/{endpoint}"
+    else:
+        next_path = f"/oauth/{endpoint}"
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, next_path, "", ""))
+
+
 def discover_oauth(options: dict[str, Any] | None = None) -> OAuthDiscovery:
     resolved = _resolve_oauth_options(options)
     issuer_url = str(resolved["issuerUrl"]).rstrip("/")
-    candidates = [
-        f"{issuer_url}/.well-known/oauth-authorization-server",
-        f"{issuer_url}/.well-known/openid-configuration",
-    ]
-    for candidate in candidates:
+    for candidate in _metadata_candidates(issuer_url):
         try:
             payload = _get_json(candidate)
         except RuntimeError:
@@ -279,10 +319,10 @@ def discover_oauth(options: dict[str, Any] | None = None) -> OAuthDiscovery:
                 issuer=str(payload.get("issuer") or resolved["issuerUrl"]),
             )
     return OAuthDiscovery(
-        authorizationEndpoint=f"{issuer_url}/oauth/authorize",
-        tokenEndpoint=f"{issuer_url}/oauth/token",
-        revocationEndpoint=f"{issuer_url}/oauth/revoke",
-        userinfoEndpoint=f"{issuer_url}/oauth/userinfo",
+        authorizationEndpoint=_oauth_endpoint(issuer_url, "authorize"),
+        tokenEndpoint=_oauth_endpoint(issuer_url, "token"),
+        revocationEndpoint=_oauth_endpoint(issuer_url, "revoke"),
+        userinfoEndpoint=_oauth_endpoint(issuer_url, "userinfo"),
         issuer=str(resolved["issuerUrl"]),
     )
 
