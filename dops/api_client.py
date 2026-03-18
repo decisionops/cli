@@ -11,6 +11,7 @@ from typing import Any
 from .auth import ensure_valid_auth_state, read_auth_state
 from .config import DEFAULT_API_BASE_URL
 from .manifest import read_manifest
+from .tls import create_ssl_context
 
 
 class DecisionOpsApiError(RuntimeError):
@@ -64,7 +65,7 @@ class DopsClient:
             payload = json.dumps(body).encode("utf8")
         request = urllib.request.Request(url, data=payload, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=10, context=create_ssl_context()) as response:
                 content_type = response.headers.get("content-type", "")
                 raw = response.read().decode("utf8")
                 if "application/json" in content_type and raw:

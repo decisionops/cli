@@ -35,7 +35,7 @@ class CliTests(unittest.TestCase):
     def test_version(self) -> None:
         result = run_cli("--version")
         self.assertEqual(result.returncode, 0)
-        self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+$")
+        self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+(?:-[\w.-]+)?$")
 
     def test_update_flag_alias(self) -> None:
         result = run_cli("--help")

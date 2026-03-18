@@ -26,6 +26,7 @@ from .config import (
     DEFAULT_OAUTH_SCOPES,
     decisionops_home,
 )
+from .tls import create_ssl_context
 
 
 @dataclass(slots=True)
@@ -191,7 +192,7 @@ def _parse_json_response(response) -> dict[str, Any]:
 def _request_json(url: str, method: str = "GET", headers: dict[str, str] | None = None, body: bytes | None = None, timeout: float = 10.0) -> dict[str, Any]:
     request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=create_ssl_context()) as response:
             return _parse_json_response(response)
     except urllib.error.HTTPError as error:
         payload = _parse_json_response(error)
