@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Generic, Iterable, TypeVar
 
 from prompt_toolkit import prompt
-from prompt_toolkit.shortcuts import radiolist_dialog, yes_no_dialog
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.validation import ValidationError, Validator
 from rich import box
 from rich.console import Console
@@ -78,12 +78,40 @@ def _render_prompt_header(title: str, chrome: PromptChrome | None = None) -> Non
             console.print(Panel.fit(heading, subtitle=chrome.eyebrow, border_style="cyan"))
         else:
             console.print(Panel.fit(heading, border_style="cyan"))
-    body = Text(title, style="bold")
+    if chrome.show_brand_header:
+        body = Text(title, style="bold")
+        if chrome.description:
+            body.append(f"\n{chrome.description}", style="dim")
+        if chrome.footer:
+            body.append(f"\n{chrome.footer}", style="dim")
+        console.print(Panel.fit(body, border_style="cyan"))
+        return
+    console.print(f"[bold]{title}[/bold]")
     if chrome.description:
-        body.append(f"\n{chrome.description}", style="dim")
+        console.print(f"[dim]{chrome.description}[/dim]")
     if chrome.footer:
-        body.append(f"\n{chrome.footer}", style="dim")
-    console.print(Panel.fit(body, border_style="cyan"))
+        console.print(f"[dim]{chrome.footer}[/dim]")
+
+
+def _resolve_select_value(raw_value: str, options: list[SelectOption[T]]) -> T | None:
+    normalized = raw_value.strip()
+    if not normalized:
+        return None
+    for index, option in enumerate(options, start=1):
+        if normalized in {str(index), str(option.value), option.label}:
+            return option.value
+    return None
+
+
+def _resolve_confirm_value(raw_value: str, default_value: bool) -> bool | None:
+    normalized = raw_value.strip().lower()
+    if not normalized:
+        return default_value
+    if normalized in {"y", "yes"}:
+        return True
+    if normalized in {"n", "no"}:
+        return False
+    return None
 
 
 def _ensure_interactive() -> None:
@@ -94,14 +122,30 @@ def _ensure_interactive() -> None:
 def prompt_select(title: str, options: list[SelectOption[T]], chrome: PromptChrome | None = None) -> T:
     _ensure_interactive()
     _render_prompt_header(title, chrome)
-    values = []
-    for option in options:
-        label = option.label if not option.description else f"{option.label} — {option.description}"
-        values.append((option.value, label))
+    for index, option in enumerate(options, start=1):
+        console.print(f"  [cyan]{index}.[/cyan] {option.label}")
+        if option.description:
+            console.print(f"     [dim]{option.description}[/dim]")
+    completer = WordCompleter(
+        [str(index) for index in range(1, len(options) + 1)] + [str(option.value) for option in options],
+        ignore_case=True,
+    )
     try:
-        result = radiolist_dialog(title="Select", text=title, values=values, ok_text="Choose", cancel_text="Cancel").run()
+        raw_value = prompt(
+            "> ",
+            completer=completer,
+            complete_while_typing=True,
+            placeholder="Enter a number or platform id",
+            validator=Validator.from_callable(
+                lambda value: _resolve_select_value(value, options) is not None,
+                error_message="Enter one of the listed numbers or platform ids.",
+                move_cursor_to_end=True,
+            ),
+            validate_while_typing=False,
+        )
     except (EOFError, KeyboardInterrupt) as error:
         raise CancelledError() from error
+    result = _resolve_select_value(raw_value, options)
     if result is None:
         raise CancelledError()
     return result
@@ -110,13 +154,25 @@ def prompt_select(title: str, options: list[SelectOption[T]], chrome: PromptChro
 def prompt_confirm(title: str, default_value: bool = True, chrome: PromptChrome | None = None) -> bool:
     _ensure_interactive()
     _render_prompt_header(title, chrome)
+    default_hint = "Y/n" if default_value else "y/N"
     try:
-        result = yes_no_dialog(title="Confirm", text=title, yes_text="Yes", no_text="No").run()
+        raw_value = prompt(
+            f"> [{default_hint}] ",
+            completer=WordCompleter(["yes", "no", "y", "n"], ignore_case=True),
+            complete_while_typing=True,
+            validator=Validator.from_callable(
+                lambda value: _resolve_confirm_value(value, default_value) is not None,
+                error_message="Enter yes or no.",
+                move_cursor_to_end=True,
+            ),
+            validate_while_typing=False,
+        )
     except (EOFError, KeyboardInterrupt) as error:
         raise CancelledError() from error
+    result = _resolve_confirm_value(raw_value, default_value)
     if result is None:
         raise CancelledError()
-    return bool(result) if result is not None else default_value
+    return result
 
 
 def prompt_text(
