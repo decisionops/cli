@@ -48,7 +48,7 @@ dops update
 Pin to a specific release:
 
 ```bash
-dops update --version v0.1.0
+dops update --version v0.1.8
 ```
 
 This re-runs the same hosted installer flow used for first-time installation and writes the updated binary to the existing install directory unless you pass `--install-dir`.
@@ -70,7 +70,7 @@ Run directly with `python -m dops` or the installed `dops` console script.
 | Variable | Default | Description |
 |---|---|---|
 | `DOPS_INSTALL_DIR` | `~/.dops/bin` | Install location for the binary |
-| `DOPS_VERSION` | `latest` | Specific release tag such as `v0.1.0` |
+| `DOPS_VERSION` | `latest` | Specific release tag such as `v0.1.8` |
 
 ## Five-minute setup
 

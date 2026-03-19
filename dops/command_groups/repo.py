@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import platform
+import shutil
+import sys
 from pathlib import Path
 
+from .. import __version__
 from ..argparse_utils import DopsHelpFormatter, add_examples, add_notes
 from ..auth import clear_auth_state, ensure_valid_auth_state, read_auth_state, revoke_auth_state
-from ..config import PLACEHOLDER_ORG_ID, PLACEHOLDER_PROJECT_ID, PLACEHOLDER_REPO_REF
+from ..config import PLACEHOLDER_ORG_ID, PLACEHOLDER_PROJECT_ID, PLACEHOLDER_REPO_REF, config_error, config_path
 from ..git import infer_default_branch, resolve_repo_path
 from ..installer import cleanup_platforms, install_platforms
 from ..manifest import read_manifest, write_manifest
 from ..platforms import load_platforms, resolve_install_path
 from ..resources import find_platforms_dir, find_skill_source_dir
+from ..tls import describe_tls_setup
 from ..ui import console, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
 from .shared import auth_display, choose_platforms, detect_repo_ref, normalize_repo_ref, resolve_server_name, resolve_server_url
 
@@ -125,7 +130,13 @@ def run_uninstall(flags: argparse.Namespace) -> None:
     )
     render_cleanup_summary(result)
     if not flags.skip_auth:
-        current = read_auth_state()
+        try:
+            current = read_auth_state()
+        except RuntimeError as error:
+            console.print(f"[yellow]{error}[/yellow]")
+            clear_auth_state()
+            console.print("Removed the corrupt local auth state.")
+            current = None
         if current:
             with_spinner("Revoking session...", lambda: revoke_auth_state(current))
             clear_auth_state()
@@ -134,9 +145,30 @@ def run_uninstall(flags: argparse.Namespace) -> None:
 
 def run_doctor(flags: argparse.Namespace) -> None:
     repo_path = resolve_repo_path(flags.repo_path)
-    current_auth = read_auth_state()
-    auth = ensure_valid_auth_state(current_auth) if current_auth else None
     issues: list[str] = []
+    tls_info = describe_tls_setup()
+    system_info = {
+        "CLI version": __version__,
+        "Python": platform.python_version(),
+        "OS": f"{platform.system()} {platform.release()}",
+        "Invocation path": str(Path(sys.argv[0]).resolve()),
+        "Shell `dops` path": shutil.which("dops") or "(not on PATH)",
+        "SSL backend": tls_info["ssl_backend"],
+        "CA source": tls_info["ca_source"],
+    }
+    if config_error():
+        issues.append(config_error() or "")
+    try:
+        current_auth = read_auth_state()
+    except RuntimeError as error:
+        current_auth = None
+        issues.append(str(error))
+    auth = None
+    if current_auth:
+        try:
+            auth = ensure_valid_auth_state(current_auth)
+        except RuntimeError as error:
+            issues.append(str(error))
     if not auth:
         issues.append("CLI auth not configured")
     manifest = read_manifest(repo_path) if repo_path else None
@@ -168,7 +200,8 @@ def run_doctor(flags: argparse.Namespace) -> None:
                     else "not configured",
                 }
             )
-    except Exception:
+    except (RuntimeError, OSError, ValueError) as error:
+        issues.append(f"Could not load platform definitions: {error}")
         platform_statuses = []
     render_doctor_report(
         auth=auth,
@@ -177,6 +210,9 @@ def run_doctor(flags: argparse.Namespace) -> None:
         manifest=manifest,
         platforms=platform_statuses,
         issues=issues,
+        system_info=system_info,
+        cli_config_path=str(config_path()),
+        cli_config_error=config_error(),
     )
 
 

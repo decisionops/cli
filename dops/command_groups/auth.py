@@ -28,29 +28,47 @@ def run_login(flags: argparse.Namespace) -> None:
         "scopes": scopes,
     }
     if flags.clear:
-        current = read_auth_state()
+        try:
+            current = read_auth_state()
+        except RuntimeError:
+            current = None
         if current:
             with_spinner("Revoking session...", lambda: revoke_auth_state(current))
         clear_auth_state()
         console.print("Cleared saved auth state.")
         return
     if not flags.with_token and not flags.force:
-        current = read_auth_state()
+        try:
+            current = read_auth_state()
+        except RuntimeError as error:
+            console.print(f"[yellow]{error}[/yellow]")
+            clear_auth_state()
+            current = None
         if current:
-            auth = with_spinner("Checking existing DecisionOps session...", lambda: ensure_valid_auth_state(current))
-            context = load_session_context(auth.accessToken, auth.apiBaseUrl)
-            auth = persist_auth_user(auth, context)
-            if context:
-                print_login_summary(
-                    [
-                        "You are already logged into AI DecisionOps",
-                        *([f"Logged into org: {resolve_organization(context)}"] if resolve_organization(context) else ["Saved session is ready to use"]),
-                        *([f"Authenticated as: {resolve_identity(context)}"] if resolve_identity(context) else []),
-                        "Run `dops logout` if you want to sign in again.",
-                    ]
-                )
-                return
-    if flags.with_token:
+            try:
+                auth = with_spinner("Checking existing DecisionOps session...", lambda: ensure_valid_auth_state(current))
+            except RuntimeError as error:
+                console.print(f"[yellow]{error}[/yellow]")
+                if current.method.startswith("token") or current.method.startswith("env:"):
+                    return
+                clear_auth_state()
+                auth = None
+            if auth is None:
+                current = None
+            else:
+                context = load_session_context(auth.accessToken, auth.apiBaseUrl)
+                auth = persist_auth_user(auth, context)
+                if context:
+                    print_login_summary(
+                        [
+                            "You are already logged into AI DecisionOps",
+                            *([f"Logged into org: {resolve_organization(context)}"] if resolve_organization(context) else ["Saved session is ready to use"]),
+                            *([f"Authenticated as: {resolve_identity(context)}"] if resolve_identity(context) else []),
+                            "Run `dops logout` if you want to sign in again.",
+                        ]
+                    )
+                    return
+    if flags.with_token or flags.token:
         token = (flags.token or "").strip()
         if not token:
             raise RuntimeError("Pass --token with an already-issued DecisionOps bearer access token. Raw org API keys are not accepted here.")
@@ -106,7 +124,13 @@ def run_login(flags: argparse.Namespace) -> None:
 
 
 def run_logout() -> None:
-    current = read_auth_state()
+    try:
+        current = read_auth_state()
+    except RuntimeError as error:
+        console.print(f"[yellow]{error}[/yellow]")
+        clear_auth_state()
+        console.print("Removed the corrupt local session file.")
+        return
     if not current:
         console.print("No DecisionOps session stored locally.")
         return
@@ -119,7 +143,11 @@ def run_auth_status() -> int:
     from ..auth import ensure_valid_auth_state, read_auth_state
     from ..ui import render_auth_status
 
-    current = read_auth_state()
+    try:
+        current = read_auth_state()
+    except RuntimeError as error:
+        console.print(str(error))
+        return 1
     if not current:
         console.print("Auth: missing")
         return 1
@@ -142,12 +170,12 @@ def register_auth_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     login.add_argument("--scopes")
     login.add_argument("--web", action="store_true", help="Use browser-based PKCE login (default)")
     login.add_argument("--with-token", action="store_true", help=argparse.SUPPRESS)
-    login.add_argument("--token", help=argparse.SUPPRESS)
+    login.add_argument("--token", help="Persist an already-issued DecisionOps bearer access token instead of starting browser login")
     login.add_argument("--no-browser", action="store_true", help="Do not attempt to launch a browser automatically")
     login.add_argument("--force", action="store_true", help="Start a new browser login even if a saved session already exists")
     login.add_argument("--clear", action="store_true", help="Remove saved login state")
     login.set_defaults(func=run_login)
-    add_examples(login, ["dops login", "dops login --web"])
+    add_examples(login, ["dops login", "dops login --web", "dops login --token dop_..."])
 
     logout = subparsers.add_parser(
         "logout",

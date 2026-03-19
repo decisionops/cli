@@ -7,11 +7,13 @@ import re
 import shlex
 import shutil
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 from .. import __version__
 from ..argparse_utils import DopsHelpFormatter, add_examples
+from ..http import urlopen_with_retries
 from ..installers.templates import POWERSHELL_INSTALLER_URL, SHELL_INSTALLER_URL
 from ..tls import create_ssl_context
 
@@ -52,9 +54,8 @@ def _resolve_target_release(version: str) -> str | None:
     url = f"https://github.com/decisionops/cli/releases/latest/download/{artifact}"
     request = urllib.request.Request(url, method="HEAD")
     try:
-        with urllib.request.urlopen(request, timeout=10, context=create_ssl_context()) as response:
-            final_url = response.geturl()
-    except Exception:
+        final_url = urlopen_with_retries(request, timeout=10, context=create_ssl_context()).url
+    except (RuntimeError, urllib.error.URLError):
         return None
     match = re.search(r"/releases/download/([^/]+)/", final_url)
     return match.group(1) if match else None
@@ -116,4 +117,4 @@ def register_update_command(subparsers: argparse._SubParsersAction[argparse.Argu
     update.add_argument("--version")
     update.add_argument("--install-dir")
     update.set_defaults(func=run_update)
-    add_examples(update, ["dops update", "dops update --version v0.1.0"])
+    add_examples(update, ["dops update", "dops update --version v0.1.8"])

@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import secrets
+import socket
 import stat
 import threading
 import time
@@ -20,13 +21,16 @@ from typing import Any, Callable
 
 from .config import (
     DEFAULT_API_BASE_URL,
+    DEFAULT_AUTH_TOKEN_ENV,
     DEFAULT_OAUTH_API_AUDIENCE,
     DEFAULT_OAUTH_CLIENT_ID,
     DEFAULT_OAUTH_ISSUER_URL,
     DEFAULT_OAUTH_SCOPES,
     decisionops_home,
 )
+from .fileio import atomic_write_text
 from .http import default_user_agent
+from .http import HttpStatusError, HttpResponse, urlopen_with_retries
 from .tls import create_ssl_context
 
 
@@ -175,31 +179,37 @@ def _auth_path() -> Path:
 
 
 def _secure_write(file_path: Path, value: str) -> None:
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(value, encoding="utf8")
-    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
+    atomic_write_text(file_path, value, mode=stat.S_IRUSR | stat.S_IWUSR)
 
 
-def _parse_json_response(response) -> dict[str, Any]:
-    text = response.read().decode("utf8")
+def _parse_json_text(text: str, url: str) -> dict[str, Any]:
     if not text:
         return {}
     try:
         return json.loads(text)
     except json.JSONDecodeError as error:
-        raise RuntimeError(f"Expected JSON response from {response.url}, received: {text[:240]}") from error
+        raise RuntimeError(f"Expected JSON response from {url}, received: {text[:240]}") from error
+
+
+def _parse_json_response(response: HttpResponse) -> dict[str, Any]:
+    return _parse_json_text(response.body.decode("utf8"), response.url)
 
 
 def _request_json(url: str, method: str = "GET", headers: dict[str, str] | None = None, body: bytes | None = None, timeout: float = 10.0) -> dict[str, Any]:
     request_headers = {"user-agent": default_user_agent(), **(headers or {})}
     request = urllib.request.Request(url, data=body, method=method, headers=request_headers)
     try:
-        with urllib.request.urlopen(request, timeout=timeout, context=create_ssl_context()) as response:
-            return _parse_json_response(response)
-    except urllib.error.HTTPError as error:
-        payload = _parse_json_response(error)
-        message = str(payload.get("error_description") or payload.get("error") or error.reason)
-        raise RuntimeError(f"Auth request failed ({error.code}): {message}") from error
+        return _parse_json_response(urlopen_with_retries(request, timeout=timeout, context=create_ssl_context()))
+    except HttpStatusError as error:
+        raw = error.body.decode("utf8")
+        try:
+            payload = _parse_json_text(raw, error.url)
+            message = str(payload.get("error_description") or payload.get("error") or error.reason)
+        except RuntimeError:
+            message = raw[:240] if raw else error.reason
+        raise RuntimeError(f"Auth request failed ({error.status}): {message}") from error
+    except socket.timeout as error:
+        raise RuntimeError(f"Auth request timed out for {url}") from error
     except urllib.error.URLError as error:
         raise RuntimeError(f"Could not reach auth endpoint: {error.reason}") from error
 
@@ -344,6 +354,13 @@ def _fetch_user_info(discovery: OAuthDiscovery, access_token: str) -> dict[str, 
         return None
 
 
+def _require_token_value(token: dict[str, Any], field: str, context: str) -> str:
+    value = token.get(field)
+    if value is None or not str(value).strip():
+        raise RuntimeError(f"{context} did not include `{field}`.")
+    return str(value)
+
+
 def _build_auth_state(
     token: dict[str, Any],
     method: str,
@@ -370,7 +387,7 @@ def _build_auth_state(
         audience=str(resolved["audience"]) if resolved.get("audience") else None,
         scopes=str(token["scope"]).split() if token.get("scope") else list(resolved["scopes"]),
         tokenType=str(token.get("token_type") or "Bearer"),
-        accessToken=str(token["access_token"]),
+        accessToken=_require_token_value(token, "access_token", "OAuth token response"),
         refreshToken=str(token["refresh_token"]) if token.get("refresh_token") else None,
         expiresAt=expires_at,
         issuedAt=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -380,10 +397,18 @@ def _build_auth_state(
 
 
 def read_auth_state() -> AuthState | None:
+    env_state = _read_env_auth_state()
+    if env_state is not None:
+        return env_state
     file_path = _auth_path()
     if not file_path.exists():
         return None
-    parsed = json.loads(file_path.read_text(encoding="utf8"))
+    try:
+        parsed = json.loads(file_path.read_text(encoding="utf8"))
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Saved CLI auth file is corrupt: {file_path}. Run `dops login --clear` and sign in again."
+        ) from error
     if not parsed.get("accessToken"):
         return None
     return AuthState(
@@ -422,6 +447,34 @@ def default_client_id() -> str:
 
 def default_scopes() -> list[str]:
     return list(DEFAULT_OAUTH_SCOPES)
+
+
+def _token_env_names() -> list[str]:
+    ordered: list[str] = []
+    for name in (DEFAULT_AUTH_TOKEN_ENV, "DECISIONOPS_ACCESS_TOKEN", "DECISIONOPS_TOKEN"):
+        if name and name not in ordered:
+            ordered.append(name)
+    return ordered
+
+
+def _read_env_auth_state() -> AuthState | None:
+    for env_name in _token_env_names():
+        token = os.environ.get(env_name, "").strip()
+        if not token:
+            continue
+        resolved = _resolve_oauth_options({})
+        return AuthState(
+            apiBaseUrl=str(resolved["apiBaseUrl"]),
+            issuerUrl=str(resolved["issuerUrl"]),
+            clientId=str(resolved["clientId"]),
+            audience=str(resolved["audience"]) if resolved.get("audience") else None,
+            scopes=list(resolved["scopes"]),
+            tokenType="Bearer",
+            accessToken=token,
+            issuedAt=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            method=f"env:{env_name}",
+        )
+    return None
 
 
 def save_token_auth_state(*, token: str, apiBaseUrl: str | None = None, issuerUrl: str | None = None, clientId: str | None = None, audience: str | None = None, scopes: list[str] | None = None) -> tuple[AuthState, str]:
@@ -493,7 +546,8 @@ def _start_oauth_callback_server(callback_port: int = 0, timeout_ms: int = 120_0
         try:
             if not state.event.wait(timeout_ms / 1000):
                 raise RuntimeError("Timed out waiting for browser authentication to complete.")
-            assert state.value is not None
+            if state.value is None:
+                raise RuntimeError("Browser authentication callback completed without a response payload.")
             return state.value
         finally:
             server.shutdown()
@@ -561,7 +615,8 @@ def login_with_pkce(
             **({"resource": str(resolved["audience"])} if resolved.get("audience") else {}),
         },
     )
-    user_info = _fetch_user_info(discovery, str(token_payload["access_token"]))
+    access_token = _require_token_value(token_payload, "access_token", "OAuth token response")
+    user_info = _fetch_user_info(discovery, access_token)
     auth_state = _build_auth_state(token_payload, "pkce", resolved, discovery, user_info)
     storage_path = write_auth_state(auth_state)
     return LoginResult(
@@ -600,7 +655,8 @@ def refresh_auth_state(auth: AuthState, *, apiBaseUrl: str | None = None, issuer
         token_payload["scope"] = " ".join(auth.scopes)
     if "token_type" not in token_payload:
         token_payload["token_type"] = auth.tokenType
-    user_info = _fetch_user_info(discovery, str(token_payload["access_token"])) or {
+    access_token = _require_token_value(token_payload, "access_token", "OAuth token refresh response")
+    user_info = _fetch_user_info(discovery, access_token) or {
         "sub": auth.user.get("id") if auth.user else None,
         "email": auth.user.get("email") if auth.user else None,
         "name": auth.user.get("name") if auth.user else None,
@@ -614,11 +670,14 @@ def ensure_valid_auth_state(auth: AuthState) -> AuthState:
     if not is_expired(auth):
         return auth
     if not auth.refreshToken:
-        return auth
+        raise RuntimeError("Your saved DecisionOps login has expired. Run `dops login` again.")
     try:
         return refresh_auth_state(auth)
-    except RuntimeError:
-        return auth
+    except RuntimeError as error:
+        raise RuntimeError(
+            "Your saved DecisionOps login has expired and could not be refreshed. Run `dops login` again.\n\n"
+            f"Details: {error}"
+        ) from error
 
 
 def revoke_auth_state(auth: AuthState) -> None:

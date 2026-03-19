@@ -16,7 +16,7 @@ def _client_from_flags(flags: argparse.Namespace) -> DopsClient:
 
 def run_decisions_list(flags: argparse.Namespace) -> None:
     client = _client_from_flags(flags)
-    decisions = client.list_decisions({"status": flags.status, "type": flags.type, "limit": int(flags.limit or 20)})
+    decisions = client.list_decisions({"status": flags.status, "type": flags.type, "limit": flags.limit})
     if not decisions:
         console.print("No decisions found.")
         return
@@ -97,7 +97,7 @@ def register_decision_commands(subparsers: argparse._SubParsersAction[argparse.A
     decisions_list = decisions_subparsers.add_parser("list", formatter_class=DopsHelpFormatter, help="List decisions", description="List decisions")
     decisions_list.add_argument("--status")
     decisions_list.add_argument("--type")
-    decisions_list.add_argument("--limit", default="20")
+    decisions_list.add_argument("--limit", type=int, default=20)
     decisions_list.add_argument("--repo-path")
     decisions_list.set_defaults(func=run_decisions_list)
 

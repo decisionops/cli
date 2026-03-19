@@ -5,6 +5,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from .fileio import atomic_write_text
+
 
 def _quote(value: str) -> str:
     return json.dumps(value)
@@ -33,7 +35,7 @@ def write_manifest(repo_path: str, values: dict[str, str | None]) -> str:
             "",
         ]
     )
-    file_path.write_text("\n".join(lines), encoding="utf8")
+    atomic_write_text(file_path, "\n".join(lines), encoding="utf8")
     return str(file_path)
 
 
@@ -62,5 +64,5 @@ def write_auth_handoff(repo_path: str | None, output_dir: str, entries: list[dic
         instructions = ", ".join(_quote(str(item)) for item in entry.get("instructions", []))
         lines.append(f"instructions = [{instructions}]")
         lines.append("")
-    file_path.write_text("\n".join(lines), encoding="utf8")
+    atomic_write_text(file_path, "\n".join(lines), encoding="utf8")
     return str(file_path)

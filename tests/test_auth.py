@@ -6,8 +6,20 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from dops.auth import AuthState, clear_auth_state, is_expired, read_auth_state, save_token_auth_state, write_auth_state
+from dops.auth import (
+    AuthState,
+    OAuthDiscovery,
+    _require_token_value,
+    clear_auth_state,
+    ensure_valid_auth_state,
+    is_expired,
+    read_auth_state,
+    refresh_auth_state,
+    save_token_auth_state,
+    write_auth_state,
+)
 
 
 class AuthTests(unittest.TestCase):
@@ -73,3 +85,45 @@ class AuthTests(unittest.TestCase):
         self.assertIsNotNone(loaded)
         assert loaded is not None
         self.assertEqual(loaded.accessToken, "my-api-token")
+
+    def test_read_auth_state_prefers_env_token(self) -> None:
+        os.environ["DECISIONOPS_ACCESS_TOKEN"] = "env-token"
+        try:
+            loaded = read_auth_state()
+        finally:
+            os.environ.pop("DECISIONOPS_ACCESS_TOKEN", None)
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(loaded.accessToken, "env-token")
+        self.assertEqual(loaded.method, "env:DECISIONOPS_ACCESS_TOKEN")
+
+    def test_read_auth_state_reports_corrupt_json(self) -> None:
+        Path(self.tmp_dir, "auth.json").write_text("{broken", encoding="utf8")
+        with self.assertRaises(RuntimeError) as raised:
+            read_auth_state()
+        self.assertIn("auth file is corrupt", str(raised.exception))
+
+    def test_ensure_valid_auth_state_raises_when_refresh_fails(self) -> None:
+        expired = self.make_auth_state(expiresAt="2020-01-01T00:00:00Z", refreshToken="refresh-token")
+        with patch("dops.auth.refresh_auth_state", side_effect=RuntimeError("invalid_grant")):
+            with self.assertRaises(RuntimeError) as raised:
+                ensure_valid_auth_state(expired)
+        self.assertIn("could not be refreshed", str(raised.exception))
+
+    def test_require_token_value_raises_for_missing_access_token(self) -> None:
+        with self.assertRaises(RuntimeError) as raised:
+            _require_token_value({}, "access_token", "OAuth token response")
+        self.assertIn("did not include `access_token`", str(raised.exception))
+
+    def test_refresh_auth_state_reports_missing_access_token(self) -> None:
+        auth = self.make_auth_state(refreshToken="refresh-token")
+        discovery = OAuthDiscovery(
+            authorizationEndpoint="https://auth.example.com/authorize",
+            tokenEndpoint="https://auth.example.com/token",
+            issuer="https://auth.example.com/oauth",
+        )
+        with patch("dops.auth.discover_oauth", return_value=discovery):
+            with patch("dops.auth._post_form", return_value={"token_type": "Bearer"}):
+                with self.assertRaises(RuntimeError) as raised:
+                    refresh_auth_state(auth)
+        self.assertIn("did not include `access_token`", str(raised.exception))

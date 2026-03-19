@@ -5,8 +5,26 @@ import argparse
 from ..api_client import DopsClient
 from ..argparse_utils import DopsHelpFormatter, add_examples
 from ..git import find_repo_root, git_changed_files, infer_repo_ref, resolve_repo_path
+from ..runtime import emit_diagnostic
 from ..ui import console, prompt_text, with_spinner
 from .shared import require_project_binding
+
+
+def _format_confidence(confidence: object) -> str | None:
+    if confidence is None:
+        return None
+    try:
+        return f"{round(float(confidence) * 100):.0f}%"
+    except (TypeError, ValueError):
+        emit_diagnostic(f"Decision gate returned non-numeric confidence: {confidence!r}")
+        return None
+
+
+def _parse_version(value: object, *, source: str) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        raise RuntimeError(f"{source} must be an integer.") from None
 
 
 def run_gate(flags: argparse.Namespace) -> None:
@@ -33,9 +51,9 @@ def run_gate(flags: argparse.Namespace) -> None:
     changed_paths = git_changed_files(root) if root else []
     result = with_spinner("Running decision gate...", lambda: client.prepare_gate(repo_ref, task_summary, changed_paths or None))
     console.print(f"Recordable:  {'yes' if result.get('recordable') else 'no'}")
-    confidence = result.get("confidence")
+    confidence = _format_confidence(result.get("confidence"))
     if confidence is not None:
-        console.print(f"Confidence:  {round(float(confidence) * 100):.0f}%")
+        console.print(f"Confidence:  {confidence}")
     if result.get("classification_reason"):
         console.print(f"Reasoning:   {result['classification_reason']}")
     elif result.get("reasoning"):
@@ -67,14 +85,17 @@ def run_validate(decision_id: str | None, flags: argparse.Namespace) -> None:
 
 def run_publish(decision_id: str, flags: argparse.Namespace) -> None:
     repo_path = resolve_repo_path(flags.repo_path) or None
+    expected_version = flags.version
     client = DopsClient.from_auth(repo_path)
     org_id, project_id = require_project_binding(client)
-    expected_version = int(flags.version) if flags.version else None
     if expected_version is None:
         decision = client.get_decision(decision_id)
         if decision.get("version") is None:
             raise RuntimeError("Could not determine current decision version. Pass --version.")
-        expected_version = int(decision["version"])
+        try:
+            expected_version = _parse_version(decision["version"], source="DecisionOps decision version")
+        except RuntimeError as error:
+            raise RuntimeError(f"{error} Pass --version explicitly.") from None
     result = with_spinner(
         "Publishing decision...",
         lambda: client.publish_decision(
@@ -119,7 +140,7 @@ def register_operation_commands(subparsers: argparse._SubParsersAction[argparse.
 
     publish = subparsers.add_parser("publish", formatter_class=DopsHelpFormatter, help="Publish a proposed decision (transition to accepted)", description="Publish a proposed decision (transition to accepted)")
     publish.add_argument("id")
-    publish.add_argument("--version")
+    publish.add_argument("--version", type=int)
     publish.add_argument("--repo-path")
     publish.set_defaults(func=lambda args: run_publish(args.id, args))
     add_examples(publish, ["dops publish dec_123", "dops publish dec_123 --version 7"])

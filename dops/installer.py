@@ -14,6 +14,7 @@ from .config import (
     PLACEHOLDER_PROJECT_ID,
     PLACEHOLDER_REPO_REF,
 )
+from .fileio import atomic_copy_dir, atomic_write_text
 from .git import infer_default_branch, infer_repo_ref
 from .manifest import write_auth_handoff, write_manifest
 from .platforms import (
@@ -58,11 +59,7 @@ def _ensure_parent(file_path: str) -> None:
 
 
 def _copy_dir(source_dir: str, target_dir: str) -> None:
-    target_path = Path(target_dir)
-    if target_path.exists():
-        shutil.rmtree(target_path)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source_dir, target_path)
+    atomic_copy_dir(source_dir, target_dir)
 
 
 def _render_mcp_build_content(platform: PlatformDefinition, server_name: str, server_url: str) -> str:
@@ -101,19 +98,29 @@ def _upsert_codex_toml(config_path: str, server_name: str, server_url: str) -> N
             output.append("")
         output.extend(new_block)
     _ensure_parent(config_path)
-    file_path.write_text("\n".join(output).rstrip("\n") + "\n", encoding="utf8")
+    atomic_write_text(file_path, "\n".join(output).rstrip("\n") + "\n", encoding="utf8")
 
 
 def _upsert_json_map(config_path: str, root_key: str, server_name: str, server_url: str) -> None:
     file_path = Path(config_path)
-    data = json.loads(file_path.read_text(encoding="utf8")) if file_path.exists() and file_path.read_text(encoding="utf8").strip() else {}
+    try:
+        raw = file_path.read_text(encoding="utf8")
+    except FileNotFoundError:
+        raw = ""
+    if not raw.strip():
+        data = {}
+    else:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"Invalid JSON in MCP config {config_path}: {error}") from error
     root = data.get(root_key, {})
     if not isinstance(root, dict):
         root = {}
     root[server_name] = {"type": "http", "url": server_url}
     data[root_key] = root
     _ensure_parent(config_path)
-    file_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf8")
+    atomic_write_text(file_path, json.dumps(data, indent=2) + "\n", encoding="utf8")
 
 
 def _remove_codex_toml_server(config_path: str, server_name: str) -> bool:
@@ -142,7 +149,7 @@ def _remove_codex_toml_server(config_path: str, server_name: str) -> bool:
         file_path.unlink(missing_ok=True)
         return True
     _ensure_parent(config_path)
-    file_path.write_text(normalized + "\n", encoding="utf8")
+    atomic_write_text(file_path, normalized + "\n", encoding="utf8")
     return True
 
 
@@ -153,7 +160,10 @@ def _remove_json_map_server(config_path: str, root_key: str, server_name: str) -
     raw = file_path.read_text(encoding="utf8").strip()
     if not raw:
         return False
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"Invalid JSON in MCP config {config_path}: {error}") from error
     root = data.get(root_key)
     if not isinstance(root, dict) or server_name not in root:
         return False
@@ -164,7 +174,7 @@ def _remove_json_map_server(config_path: str, root_key: str, server_name: str) -
         file_path.unlink(missing_ok=True)
         return True
     _ensure_parent(config_path)
-    file_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf8")
+    atomic_write_text(file_path, json.dumps(data, indent=2) + "\n", encoding="utf8")
     return True
 
 
@@ -201,12 +211,13 @@ def build_platform(
         mcp_build_path = expand_path(platform.mcp.build_path, context)
         target_path = platform_output / mcp_build_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(_render_mcp_build_content(platform, server_name, server_url), encoding="utf8")
+        atomic_write_text(target_path, _render_mcp_build_content(platform, server_name, server_url), encoding="utf8")
     if platform.manifest and platform.manifest.supported and platform.manifest.build_path:
         manifest_build_path = expand_path(platform.manifest.build_path, context)
         target_path = platform_output / manifest_build_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(
+        atomic_write_text(
+            target_path,
             "\n".join(
                 [
                     "version = 1",

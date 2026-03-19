@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import expand_home
+from .text_utils import levenshtein_distance
 
 
 @dataclass(slots=True)
@@ -116,25 +117,6 @@ def _normalize_platform_id(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
-def _levenshtein_distance(a: str, b: str) -> int:
-    if a == b:
-        return 0
-    if not a:
-        return len(b)
-    if not b:
-        return len(a)
-    previous = list(range(len(b) + 1))
-    for i, a_char in enumerate(a, start=1):
-        diagonal = previous[0]
-        previous[0] = i
-        for j, b_char in enumerate(b, start=1):
-            next_diagonal = previous[j]
-            substitution_cost = 0 if a_char == b_char else 1
-            previous[j] = min(previous[j] + 1, previous[j - 1] + 1, diagonal + substitution_cost)
-            diagonal = next_diagonal
-    return previous[-1]
-
-
 def _suggest_platform_id(platform_ids: list[str], input_value: str) -> str | None:
     normalized_input = _normalize_platform_id(input_value)
     if not normalized_input:
@@ -151,7 +133,7 @@ def _suggest_platform_id(platform_ids: list[str], input_value: str) -> str | Non
             if best_prefix_match is None or len(platform_id) < len(best_prefix_match):
                 best_prefix_match = platform_id
             continue
-        distance = _levenshtein_distance(normalized_input, normalized_platform_id)
+        distance = levenshtein_distance(normalized_input, normalized_platform_id)
         if best_distance_match is None or distance < best_distance_match[1]:
             best_distance_match = (platform_id, distance)
     if best_prefix_match:

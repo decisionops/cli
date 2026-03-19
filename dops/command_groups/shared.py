@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from typing import Any
 
 from rich.panel import Panel
@@ -10,6 +11,7 @@ from ..auth import AuthState, write_auth_state
 from ..config import DEFAULT_MCP_SERVER_NAME, DEFAULT_MCP_SERVER_URL
 from ..git import infer_repo_ref
 from ..platforms import load_platforms
+from ..runtime import emit_diagnostic
 from ..ui import (
     PromptChrome,
     SelectOption,
@@ -59,20 +61,7 @@ def persist_auth_user(auth: AuthState, context: dict[str, Any] | None) -> AuthSt
     user = resolve_auth_user(context)
     if not user or auth.user == user:
         return auth
-    next_state = AuthState(
-        apiBaseUrl=auth.apiBaseUrl,
-        issuerUrl=auth.issuerUrl,
-        clientId=auth.clientId,
-        audience=auth.audience,
-        scopes=auth.scopes,
-        tokenType=auth.tokenType,
-        accessToken=auth.accessToken,
-        refreshToken=auth.refreshToken,
-        expiresAt=auth.expiresAt,
-        issuedAt=auth.issuedAt,
-        method=auth.method,
-        user=user,
-    )
+    next_state = replace(auth, user=user)
     write_auth_state(next_state)
     return next_state
 
@@ -80,7 +69,8 @@ def persist_auth_user(auth: AuthState, context: dict[str, Any] | None) -> AuthSt
 def load_session_context(token: str, api_base_url: str | None = None) -> dict[str, Any] | None:
     try:
         return with_spinner("Loading DecisionOps workspace...", lambda: load_user_context(token=token, apiBaseUrl=api_base_url))
-    except Exception:
+    except Exception as error:
+        emit_diagnostic(f"Could not load DecisionOps workspace context: {error}")
         return None
 
 

@@ -1,34 +1,22 @@
-name: Release CLI
+name: CLI CI
 
 on:
+  pull_request:
   push:
-    tags:
-      - "v*"
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    branches:
+      - main
 
 jobs:
-  release:
+  test-and-package:
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04
-            artifact_name: dops-linux-x64
-            binary_path: dist/dops
-          - runner: ubuntu-24.04-arm
-            artifact_name: dops-linux-arm64
-            binary_path: dist/dops
-          - runner: macos-13
-            artifact_name: dops-darwin-x64
             binary_path: dist/dops
           - runner: macos-14
-            artifact_name: dops-darwin-arm64
             binary_path: dist/dops
           - runner: windows-latest
-            artifact_name: dops-windows-x64.exe
             binary_path: dist/dops.exe
     runs-on: ${{ matrix.runner }}
     steps:
@@ -46,16 +34,10 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
-      - name: Stamp release version
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          printf '__version__ = "%s"\n' "$VERSION" > dops/_build_version.py
-
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
-      - name: Build release binary
+      - name: Build binary
         run: |
           pyinstaller --onefile --name dops --hidden-import=certifi --collect-data=certifi --hidden-import=_ssl dops_bootstrap.py
 
@@ -66,13 +48,3 @@ jobs:
           "${{ matrix.binary_path }}" --help >/dev/null
           "${{ matrix.binary_path }}" config path
           "${{ matrix.binary_path }}" doctor --repo-path "$PWD"
-
-      - name: Rename artifact
-        shell: bash
-        run: |
-          cp "${{ matrix.binary_path }}" "dist/${{ matrix.artifact_name }}"
-
-      - name: Publish GitHub release artifact
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/${{ matrix.artifact_name }}

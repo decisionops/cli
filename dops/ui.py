@@ -282,8 +282,31 @@ def render_cleanup_summary(result) -> None:
         console.print("[yellow]Restart your IDE to stop using the removed MCP server.[/yellow]")
 
 
-def render_doctor_report(*, auth, auth_display: str, repo_path: str | None, manifest, platforms: Iterable[dict[str, str]], issues: list[str]) -> None:
+def render_doctor_report(
+    *,
+    auth,
+    auth_display: str,
+    repo_path: str | None,
+    manifest,
+    platforms: Iterable[dict[str, str]],
+    issues: list[str],
+    system_info: dict[str, str] | None = None,
+    cli_config_path: str | None = None,
+    cli_config_error: str | None = None,
+) -> None:
     _section_title("DecisionOps Doctor")
+    if system_info:
+        table = Table(title="System", box=box.SIMPLE)
+        table.add_column("Item")
+        table.add_column("Value")
+        for key, value in system_info.items():
+            table.add_row(key, value)
+        console.print(table)
+    if cli_config_path:
+        console.print(f"CLI config (`config.toml`): {cli_config_path}")
+        console.print("[dim]  Distinct from the repo binding manifest at `.decisionops/manifest.toml`.[/dim]")
+    if cli_config_error:
+        console.print(f"[yellow]CLI config warning:[/yellow] {cli_config_error}")
     if auth:
         console.print(f"[green]✓[/green] CLI auth: configured ({auth_display})")
     else:
@@ -292,12 +315,12 @@ def render_doctor_report(*, auth, auth_display: str, repo_path: str | None, mani
     if repo_path:
         console.print(f"Repository: {repo_path}")
         if manifest:
-            console.print("[green]Manifest: present[/green]")
+            console.print("[green]Repo binding manifest (`manifest.toml`): present[/green]")
             console.print(f"[dim]  org_id:     {manifest.get('org_id', '(missing)')}[/dim]")
             console.print(f"[dim]  project_id: {manifest.get('project_id', '(missing)')}[/dim]")
             console.print(f"[dim]  repo_ref:   {manifest.get('repo_ref', '(missing)')}[/dim]")
         else:
-            console.print("[red]Manifest: missing[/red]")
+            console.print("[red]Repo binding manifest (`manifest.toml`): missing[/red]")
             console.print("[dim]  → Run: dops init[/dim]")
     else:
         console.print("[dim]Repository: not detected (run from a git repo or pass --repo-path)[/dim]")

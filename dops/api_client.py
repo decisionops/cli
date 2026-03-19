@@ -10,7 +10,7 @@ from typing import Any
 
 from .auth import ensure_valid_auth_state, read_auth_state
 from .config import DEFAULT_API_BASE_URL
-from .http import default_user_agent
+from .http import HttpStatusError, default_user_agent, urlopen_with_retries
 from .manifest import read_manifest
 from .tls import create_ssl_context
 
@@ -70,14 +70,17 @@ class DopsClient:
             payload = json.dumps(body).encode("utf8")
         request = urllib.request.Request(url, data=payload, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=10, context=create_ssl_context()) as response:
-                content_type = response.headers.get("content-type", "")
-                raw = response.read().decode("utf8")
-                if "application/json" in content_type and raw:
+            response = urlopen_with_retries(request, timeout=10, context=create_ssl_context())
+            content_type = response.headers.get("content-type", "")
+            raw = response.body.decode("utf8")
+            if "application/json" in content_type and raw:
+                try:
                     return json.loads(raw)
-                return raw
-        except urllib.error.HTTPError as error:
-            raw = error.read().decode("utf8")
+                except json.JSONDecodeError as error:
+                    raise DecisionOpsApiError(response.status, f"DecisionOps API returned invalid JSON for {url}.") from error
+            return raw
+        except HttpStatusError as error:
+            raw = error.body.decode("utf8")
             try:
                 payload = json.loads(raw) if raw else {}
             except json.JSONDecodeError:
@@ -88,11 +91,11 @@ class DopsClient:
                 else str(payload.get("error") or payload.get("message") or error.reason)
             )
             final_message = (
-                _format_auth_error_message(message or str(error.reason) or f"Request failed ({error.code})")
-                if error.code in (401, 403)
-                else message or f"Request failed ({error.code})"
+                _format_auth_error_message(message or str(error.reason) or f"Request failed ({error.status})")
+                if error.status in (401, 403)
+                else message or f"Request failed ({error.status})"
             )
-            raise DecisionOpsApiError(error.code, final_message) from error
+            raise DecisionOpsApiError(error.status, final_message) from error
         except socket.timeout as error:
             raise DecisionOpsApiError(0, f"DecisionOps API timed out ({self.api_base_url}).") from error
         except urllib.error.URLError as error:
