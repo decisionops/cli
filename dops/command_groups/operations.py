@@ -43,7 +43,7 @@ def run_gate(flags: argparse.Namespace) -> None:
     if not repo_ref and repo_path:
         try:
             repo_ref = infer_repo_ref(repo_path)
-        except Exception:
+        except RuntimeError:
             repo_ref = None
     if not repo_ref:
         raise RuntimeError("Could not determine repo_ref. Run `dops init` or pass --repo-path inside a configured repo.")

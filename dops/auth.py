@@ -370,7 +370,12 @@ def _build_auth_state(
 ) -> AuthState:
     expires_at = None
     if token.get("expires_in"):
-        expires_at = (datetime.now(UTC) + timedelta(seconds=int(token["expires_in"]))).isoformat().replace("+00:00", "Z")
+        try:
+            expires_seconds = int(token["expires_in"])
+        except (TypeError, ValueError):
+            expires_seconds = None
+        if expires_seconds is not None:
+            expires_at = (datetime.now(UTC) + timedelta(seconds=expires_seconds)).isoformat().replace("+00:00", "Z")
     user = None
     if user_info:
         user = {}

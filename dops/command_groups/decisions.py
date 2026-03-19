@@ -61,7 +61,12 @@ def run_decisions_search(terms: str, flags: argparse.Namespace) -> None:
     client = _client_from_flags(flags)
     result = client.search_decisions(terms, {"mode": flags.mode} if flags.mode else None)
     decisions = result.get("decisions", []) if isinstance(result, dict) else []
-    total = int(result.get("total", len(decisions))) if isinstance(result, dict) else len(decisions)
+    total = len(decisions)
+    if isinstance(result, dict):
+        try:
+            total = int(result.get("total", len(decisions)))
+        except (TypeError, ValueError):
+            total = len(decisions)
     if not decisions:
         console.print("No matching decisions found.")
         return

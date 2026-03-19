@@ -6,7 +6,7 @@ from typing import Any
 
 from rich.panel import Panel
 
-from ..api_client import DopsClient, load_user_context
+from ..api_client import DecisionOpsApiError, DopsClient, load_user_context
 from ..auth import AuthState, write_auth_state
 from ..config import DEFAULT_MCP_SERVER_NAME, DEFAULT_MCP_SERVER_URL
 from ..git import infer_repo_ref
@@ -69,7 +69,7 @@ def persist_auth_user(auth: AuthState, context: dict[str, Any] | None) -> AuthSt
 def load_session_context(token: str, api_base_url: str | None = None) -> dict[str, Any] | None:
     try:
         return with_spinner("Loading DecisionOps workspace...", lambda: load_user_context(token=token, apiBaseUrl=api_base_url))
-    except Exception as error:
+    except (DecisionOpsApiError, RuntimeError) as error:
         emit_diagnostic(f"Could not load DecisionOps workspace context: {error}")
         return None
 
@@ -90,7 +90,7 @@ def normalize_repo_ref(value: str) -> str:
 def detect_repo_ref(repo_path: str) -> str | None:
     try:
         return normalize_repo_ref(infer_repo_ref(repo_path))
-    except Exception:
+    except RuntimeError:
         return None
 
 

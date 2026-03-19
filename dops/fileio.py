@@ -21,7 +21,7 @@ def atomic_write_text(file_path: str | Path, value: str, *, encoding: str = "utf
     finally:
         if os.path.exists(temp_path):
             try:
-                os.unlink(temp_path)
+                os.unlink(temp_path)  # noqa: D007
             except OSError:
                 pass
 

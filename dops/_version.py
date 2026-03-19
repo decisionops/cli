@@ -38,7 +38,7 @@ def _version_from_git() -> str | None:
             text=True,
             check=True,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
     value = completed.stdout.strip()
     if not value:

@@ -395,7 +395,7 @@ def cleanup_platforms(options: dict[str, object]) -> CleanupResult:
                     result.skipped_mcp.append({"platformId": platform.id, "reason": f"config path does not exist ({target})"})
                 else:
                     result.skipped_mcp.append({"platformId": platform.id, "reason": f"server '{server_name}' not found"})
-            except Exception as error:  # pragma: no cover - defensive
+            except (OSError, RuntimeError) as error:  # pragma: no cover - defensive
                 result.skipped_mcp.append({"platformId": platform.id, "reason": str(error)})
     if repo_path and bool(options.get("remove_manifest", False)):
         manifest_path = str(Path(repo_path) / ".decisionops" / "manifest.toml")

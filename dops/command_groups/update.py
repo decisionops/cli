@@ -77,7 +77,7 @@ def run_update(flags: argparse.Namespace) -> None:
         command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", f"irm {POWERSHELL_INSTALLER_URL} | iex"]
     else:
         command = ["sh", "-c", f"curl -fsSL {shlex.quote(SHELL_INSTALLER_URL)} | sh"]
-    completed = subprocess.run(command, env=env, check=False)
+    completed = subprocess.run(command, env=env, check=False, timeout=600)
     if completed.returncode != 0:
         raise RuntimeError(f"Update failed with exit code {completed.returncode}.")
 
