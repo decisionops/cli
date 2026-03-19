@@ -51,6 +51,32 @@ class PromptChrome:
     show_brand_header: bool = True
 
 
+def _supports_unicode_output() -> bool:
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
+    return "utf" in encoding
+
+
+def _status_symbol(kind: str) -> str:
+    unicode_symbols = {
+        "ok": "✓",
+        "skip": "⊘",
+        "remove": "✗",
+        "next": "→",
+    }
+    ascii_symbols = {
+        "ok": "OK",
+        "skip": "-",
+        "remove": "x",
+        "next": "->",
+    }
+    symbols = unicode_symbols if _supports_unicode_output() else ascii_symbols
+    return symbols[kind]
+
+
+def _status_markup(kind: str, style: str) -> str:
+    return f"[{style}]{_status_symbol(kind)}[/{style}]"
+
+
 def reset_flow_state() -> None:
     global _prompt_count
     _prompt_count = 0
@@ -74,18 +100,9 @@ def _render_prompt_header(title: str, chrome: PromptChrome | None = None) -> Non
     if chrome.show_brand_header:
         heading = Text("DecisionOps", style="bold cyan")
         heading.append(" CLI", style="dim")
+        console.print(heading)
         if chrome.eyebrow:
-            console.print(Panel.fit(heading, subtitle=chrome.eyebrow, border_style="cyan"))
-        else:
-            console.print(Panel.fit(heading, border_style="cyan"))
-    if chrome.show_brand_header:
-        body = Text(title, style="bold")
-        if chrome.description:
-            body.append(f"\n{chrome.description}", style="dim")
-        if chrome.footer:
-            body.append(f"\n{chrome.footer}", style="dim")
-        console.print(Panel.fit(body, border_style="cyan"))
-        return
+            console.print(f"[dim]{chrome.eyebrow}[/dim]")
     console.print(f"[bold]{title}[/bold]")
     if chrome.description:
         console.print(f"[dim]{chrome.description}[/dim]")
@@ -248,13 +265,13 @@ def render_install_summary(result) -> None:
     _section_title("Install summary")
     if result.manifest_path:
         suffix = " (placeholder)" if result.placeholders_used else ""
-        console.print(f"[green]✓[/green] Manifest{suffix}: {result.manifest_path}")
+        console.print(f"{_status_markup('ok', 'green')} Manifest{suffix}: {result.manifest_path}")
     for entry in result.installed_skills:
-        console.print(f"[green]✓[/green] Skill installed: {entry['target']} ({entry['platformId']})")
+        console.print(f"{_status_markup('ok', 'green')} Skill installed: {entry['target']} ({entry['platformId']})")
     for entry in result.installed_mcp:
-        console.print(f"[green]✓[/green] MCP config written: {entry['target']} ({entry['platformId']})")
+        console.print(f"{_status_markup('ok', 'green')} MCP config written: {entry['target']} ({entry['platformId']})")
     for entry in result.skipped_mcp:
-        console.print(f"[yellow]⊘[/yellow] MCP config skipped: {entry['platformId']} — {entry['reason']}")
+        console.print(f"{_status_markup('skip', 'yellow')} MCP config skipped: {entry['platformId']} - {entry['reason']}")
     if result.installed_skills or result.installed_mcp:
         _section_title("Next steps")
         for line in [
@@ -269,15 +286,15 @@ def render_install_summary(result) -> None:
 def render_cleanup_summary(result) -> None:
     _section_title("Cleanup summary")
     for entry in result.removed_skills:
-        console.print(f"[red]✗[/red] Skill removed: {entry['target']} ({entry['platformId']})")
+        console.print(f"{_status_markup('remove', 'red')} Skill removed: {entry['target']} ({entry['platformId']})")
     for entry in result.skipped_skills:
-        console.print(f"[dim]⊘[/dim] Skill skipped: {entry['platformId']} — {entry['reason']}")
+        console.print(f"{_status_markup('skip', 'dim')} Skill skipped: {entry['platformId']} - {entry['reason']}")
     for entry in result.removed_mcp:
-        console.print(f"[red]✗[/red] MCP config removed: {entry['target']} ({entry['platformId']})")
+        console.print(f"{_status_markup('remove', 'red')} MCP config removed: {entry['target']} ({entry['platformId']})")
     for entry in result.skipped_mcp:
-        console.print(f"[dim]⊘[/dim] MCP config skipped: {entry['platformId']} — {entry['reason']}")
+        console.print(f"{_status_markup('skip', 'dim')} MCP config skipped: {entry['platformId']} - {entry['reason']}")
     if result.removed_manifest_path:
-        console.print(f"[red]✗[/red] Manifest removed: {result.removed_manifest_path}")
+        console.print(f"{_status_markup('remove', 'red')} Manifest removed: {result.removed_manifest_path}")
     if result.removed_mcp:
         console.print("[yellow]Restart your IDE to stop using the removed MCP server.[/yellow]")
 
@@ -308,10 +325,10 @@ def render_doctor_report(
     if cli_config_error:
         console.print(f"[yellow]CLI config warning:[/yellow] {cli_config_error}")
     if auth:
-        console.print(f"[green]✓[/green] CLI auth: configured ({auth_display})")
+        console.print(f"{_status_markup('ok', 'green')} CLI auth: configured ({auth_display})")
     else:
-        console.print("[red]✗[/red] CLI auth: not configured")
-        console.print("[dim]  → Run: dops login[/dim]")
+        console.print(f"{_status_markup('remove', 'red')} CLI auth: not configured")
+        console.print(f"[dim]  {_status_symbol('next')} Run: dops login[/dim]")
     if repo_path:
         console.print(f"Repository: {repo_path}")
         if manifest:
@@ -321,7 +338,7 @@ def render_doctor_report(
             console.print(f"[dim]  repo_ref:   {manifest.get('repo_ref', '(missing)')}[/dim]")
         else:
             console.print("[red]Repo binding manifest (`manifest.toml`): missing[/red]")
-            console.print("[dim]  → Run: dops init[/dim]")
+            console.print(f"[dim]  {_status_symbol('next')} Run: dops init[/dim]")
     else:
         console.print("[dim]Repository: not detected (run from a git repo or pass --repo-path)[/dim]")
     table = Table(title="Platforms", box=box.SIMPLE)

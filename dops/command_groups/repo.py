@@ -5,6 +5,7 @@ import platform
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from .. import __version__
 from ..argparse_utils import DopsHelpFormatter, add_examples, add_notes
@@ -16,8 +17,100 @@ from ..manifest import read_manifest, write_manifest
 from ..platforms import load_platforms, resolve_install_path
 from ..resources import find_platforms_dir, find_skill_source_dir
 from ..tls import describe_tls_setup
-from ..ui import console, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
-from .shared import auth_display, choose_platforms, detect_repo_ref, normalize_repo_ref, resolve_server_name, resolve_server_url
+from ..ui import PromptChrome, SelectOption, console, flow_chrome, prompt_select, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
+from .shared import auth_display, choose_platforms, detect_repo_ref, is_interactive, load_session_context, normalize_repo_ref, resolve_server_name, resolve_server_url
+
+
+def _organization_options(context: dict[str, Any] | None) -> list[SelectOption[str]]:
+    options: list[SelectOption[str]] = []
+    seen: set[str] = set()
+    for organization in ([context.get("activeOrganization")] if context and context.get("activeOrganization") else []) + list((context or {}).get("organizations") or []):
+        org_id = str((organization or {}).get("orgId") or "").strip()
+        if not org_id or org_id in seen:
+            continue
+        seen.add(org_id)
+        org_name = str((organization or {}).get("orgName") or org_id).strip() or org_id
+        role = str((organization or {}).get("role") or "").strip()
+        label = org_name if org_name == org_id else f"{org_name} ({org_id})"
+        options.append(SelectOption(label=label, value=org_id, description=(f"Role: {role}" if role else None)))
+    return options
+
+
+def _project_options(context: dict[str, Any] | None, org_id: str) -> list[SelectOption[str]]:
+    options: list[SelectOption[str]] = []
+    seen: set[str] = set()
+    projects: list[dict[str, Any]] = []
+    if context and context.get("activeProject"):
+        projects.append(context["activeProject"])
+    projects.extend(list((context or {}).get("projects") or []))
+    for project in projects:
+        project_org_id = str(project.get("orgId") or "").strip()
+        project_id = str(project.get("id") or project.get("projectId") or "").strip()
+        if project_org_id != org_id or not project_id or project_id in seen:
+            continue
+        seen.add(project_id)
+        project_name = str(project.get("name") or project.get("projectName") or project.get("projectKey") or project_id).strip() or project_id
+        project_key = str(project.get("projectKey") or "").strip()
+        label = project_name if not project_key or project_key == project_name else f"{project_name} ({project_key})"
+        description = f"Project id: {project_id}"
+        if project.get("isDefault"):
+            description += " • default"
+        options.append(SelectOption(label=label, value=project_id, description=description))
+    return options
+
+
+def _pick_option(title: str, options: list[SelectOption[str]], *, description: str) -> str:
+    if len(options) == 1:
+        console.print(f"[dim]{description}[/dim]")
+        console.print(f"Using {title.lower()}: [cyan]{options[0].label}[/cyan]")
+        return options[0].value
+    return prompt_select(
+        title,
+        options,
+        flow_chrome(PromptChrome(description=description)),
+    )
+
+
+def _resolve_binding_from_workspace_context(
+    *,
+    org_id: str | None,
+    project_id: str | None,
+    api_base_url: str | None = None,
+) -> tuple[str | None, str | None]:
+    if org_id and project_id:
+        return org_id, project_id
+    try:
+        current_auth = read_auth_state()
+    except RuntimeError:
+        return org_id, project_id
+    if current_auth is None:
+        return org_id, project_id
+    try:
+        auth = ensure_valid_auth_state(current_auth)
+    except RuntimeError:
+        return org_id, project_id
+    context = load_session_context(auth.accessToken, api_base_url or auth.apiBaseUrl)
+    if not context:
+        return org_id, project_id
+    resolved_org_id = org_id
+    resolved_project_id = project_id
+    if not resolved_org_id:
+        org_options = _organization_options(context)
+        if org_options:
+            resolved_org_id = _pick_option(
+                "Choose organization",
+                org_options,
+                description="Select the DecisionOps organization that should own this repository binding.",
+            )
+    if not resolved_project_id and resolved_org_id:
+        project_options = _project_options(context, resolved_org_id)
+        if project_options:
+            resolved_project_id = _pick_option(
+                "Choose project",
+                project_options,
+                description="Select the DecisionOps project that should govern this repository.",
+            )
+    return resolved_org_id, resolved_project_id
 
 
 def run_init(flags: argparse.Namespace) -> None:
@@ -31,7 +124,6 @@ def run_init(flags: argparse.Namespace) -> None:
     org_id = flags.org_id
     project_id = flags.project_id
     repo_ref = detected_repo_ref
-    from .shared import is_interactive
 
     if not org_id and not project_id and allow_placeholders:
         org_id = PLACEHOLDER_ORG_ID
@@ -40,6 +132,11 @@ def run_init(flags: argparse.Namespace) -> None:
     elif not org_id or not project_id:
         if not is_interactive():
             raise RuntimeError("--org-id and --project-id are required. Use --allow-placeholders for local prototyping.")
+        org_id, project_id = _resolve_binding_from_workspace_context(
+            org_id=org_id,
+            project_id=project_id,
+            api_base_url=flags.api_base_url,
+        )
         if not org_id:
             org_id = prompt_text(
                 title="DecisionOps org_id",

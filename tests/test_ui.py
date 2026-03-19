@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from dops.ui import SelectOption, _resolve_confirm_value, _resolve_select_value
+from dops.ui import SelectOption, _resolve_confirm_value, _resolve_select_value, _status_symbol
 
 
 class UiTests(unittest.TestCase):
@@ -22,3 +23,10 @@ class UiTests(unittest.TestCase):
         self.assertTrue(_resolve_confirm_value("y", False))
         self.assertFalse(_resolve_confirm_value("no", True))
         self.assertIsNone(_resolve_confirm_value("maybe", True))
+
+    def test_status_symbol_falls_back_to_ascii_for_non_utf_terminals(self) -> None:
+        with patch("dops.ui._supports_unicode_output", return_value=False):
+            self.assertEqual(_status_symbol("ok"), "OK")
+            self.assertEqual(_status_symbol("skip"), "-")
+            self.assertEqual(_status_symbol("remove"), "x")
+            self.assertEqual(_status_symbol("next"), "->")

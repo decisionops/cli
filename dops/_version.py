@@ -4,7 +4,7 @@ import subprocess
 from importlib import metadata
 from pathlib import Path
 
-DEFAULT_VERSION = "0.1.10"
+DEFAULT_VERSION = "0.1.11"
 
 
 def _normalize_version(value: str) -> str:
@@ -43,7 +43,7 @@ def _version_from_git() -> str | None:
 
 
 def resolve_version() -> str:
-    return _version_from_build_file() or _version_from_git() or _version_from_metadata() or DEFAULT_VERSION
+    return _version_from_build_file() or _version_from_git() or DEFAULT_VERSION or _version_from_metadata()
 
 
 __version__ = resolve_version()
