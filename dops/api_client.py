@@ -32,6 +32,17 @@ def _format_auth_error_message(message: str) -> str:
     )
 
 
+def _format_missing_scope_error_message(message: str) -> str:
+    return "\n".join(
+        [
+            "Your saved DecisionOps login does not include the required permissions.",
+            "Run `dops login --force` and try again.",
+            "",
+            f"Details: {message}",
+        ]
+    )
+
+
 @dataclass(slots=True)
 class DopsClient:
     api_base_url: str
@@ -92,7 +103,9 @@ class DopsClient:
             )
             final_message = (
                 _format_auth_error_message(message or str(error.reason) or f"Request failed ({error.status})")
-                if error.status in (401, 403)
+                if error.status == 401
+                else _format_missing_scope_error_message(message or str(error.reason) or f"Request failed ({error.status})")
+                if error.status == 403 and "missing scope" in (message or "").lower()
                 else message or f"Request failed ({error.status})"
             )
             raise DecisionOpsApiError(error.status, final_message) from error

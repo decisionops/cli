@@ -38,6 +38,24 @@ class ApiClientTests(unittest.TestCase):
         self.assertEqual(raised.exception.status, 401)
         self.assertIn("Run `dops login`", str(raised.exception))
 
+    def test_request_reports_missing_scope_with_force_relogin_message(self) -> None:
+        client = DopsClient(api_base_url="https://api.example.com", token="dop_token")
+        with patch(
+            "dops.api_client.urlopen_with_retries",
+            side_effect=HttpStatusError(
+                403,
+                "https://api.example.com/v1/admin/projects/proj_123/repositories",
+                {"content-type": "application/json"},
+                b'{"message":"Missing scope: admin:write"}',
+                "Forbidden",
+            ),
+        ):
+            with self.assertRaises(DecisionOpsApiError) as raised:
+                client.request("POST", "/v1/admin/projects/proj_123/repositories", {"repoId": "acme/backend"})
+        self.assertEqual(raised.exception.status, 403)
+        self.assertIn("Run `dops login --force`", str(raised.exception))
+        self.assertIn("Missing scope: admin:write", str(raised.exception))
+
     def test_request_reports_invalid_json_on_success(self) -> None:
         client = DopsClient(api_base_url="https://api.example.com", token="dop_token")
         with patch(

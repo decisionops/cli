@@ -161,7 +161,7 @@ DEFAULT_OAUTH_CLIENT_ID = _string_value(
 )
 DEFAULT_OAUTH_SCOPES = _list_value(
     "DECISIONOPS_OAUTH_SCOPES",
-    ["decisions:read", "decisions:write", "decisions:approve", "metrics:read", "admin:read"],
+    ["decisions:read", "decisions:write", "decisions:approve", "metrics:read", "admin:read", "admin:write"],
     ("oauth_scopes",),
     ("oauth", "scopes"),
 )

@@ -55,6 +55,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.DEFAULT_OAUTH_SCOPES, ["alpha", "beta"])
         self.assertTrue(config.DEFAULT_VERBOSE)
 
+    def test_default_oauth_scopes_include_admin_write(self) -> None:
+        config = importlib.reload(self.config_module)
+        self.assertIn("admin:read", config.DEFAULT_OAUTH_SCOPES)
+        self.assertIn("admin:write", config.DEFAULT_OAUTH_SCOPES)
+
     def test_malformed_config_does_not_crash_reload(self) -> None:
         config_path = os.path.join(self.temp_dir, "config.toml")
         with open(config_path, "w", encoding="utf8") as handle:
