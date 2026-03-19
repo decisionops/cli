@@ -3,8 +3,10 @@ from __future__ import annotations
 import subprocess
 from importlib import metadata
 from pathlib import Path
+import re
 
 DEFAULT_VERSION = "0.1.11"
+_SEMVER_LIKE_PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$")
 
 
 def _normalize_version(value: str) -> str:
@@ -39,7 +41,10 @@ def _version_from_git() -> str | None:
     except Exception:
         return None
     value = completed.stdout.strip()
-    return _normalize_version(value) if value else None
+    if not value:
+        return None
+    normalized = _normalize_version(value)
+    return normalized if _SEMVER_LIKE_PATTERN.match(normalized) else None
 
 
 def resolve_version() -> str:
