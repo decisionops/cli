@@ -144,7 +144,7 @@ There is no API key or token-based alternative for IDE MCP authentication.
 
 ### Repo binding
 
-`dops init` should leave a manifest in the repo.
+`dops init` should leave a manifest in the repo. When CLI auth is available, it also verifies that the repository is linked to the selected DecisionOps project and creates the project-repository assignment if it is missing.
 
 ![dops init](assets/demo-init.gif)
 
@@ -162,7 +162,7 @@ mcp_server_url = "https://api.aidecisionops.com/mcp"
 
 ### Setup verification
 
-`dops doctor` is the quickest way to verify auth, repo binding, and platform installation status.
+`dops doctor` is the quickest way to verify auth, repo binding, central project-repository linkage, and platform installation status.
 
 ![dops doctor](assets/demo-doctor.gif)
 

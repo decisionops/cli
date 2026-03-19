@@ -108,6 +108,14 @@ class DopsClient:
     def load_project_repositories(self, project_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/admin/projects/{urllib.parse.quote(project_id)}/repositories")
 
+    def attach_repository_to_project(self, project_id: str, repo_id: str) -> dict[str, Any]:
+        payload = self.request(
+            "POST",
+            f"/v1/admin/projects/{urllib.parse.quote(project_id)}/repositories",
+            {"repoId": repo_id},
+        )
+        return payload if isinstance(payload, dict) else {}
+
     def switch_active_org(self, org_id: str) -> dict[str, Any]:
         payload = self.request("POST", "/v1/auth/switch-org", {"orgId": org_id})
         return payload if isinstance(payload, dict) else {}

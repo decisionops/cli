@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__
-from ..api_client import DopsClient
+from ..api_client import DecisionOpsApiError, DopsClient
 from ..argparse_utils import DopsHelpFormatter, add_examples, add_notes
 from ..auth import clear_auth_state, ensure_valid_auth_state, read_auth_state, revoke_auth_state
 from ..config import PLACEHOLDER_ORG_ID, PLACEHOLDER_PROJECT_ID, PLACEHOLDER_REPO_REF, config_error, config_path
@@ -28,6 +28,86 @@ _CREATE_PROJECT = "__create_project__"
 _KEEP_EXISTING_BINDING = "__keep_existing_binding__"
 _UPDATE_EXISTING_BINDING = "__update_existing_binding__"
 _CANCEL_EXISTING_BINDING = "__cancel_existing_binding__"
+
+
+def _binding_uses_placeholders(org_id: str, project_id: str, repo_ref: str) -> bool:
+    return org_id == PLACEHOLDER_ORG_ID or project_id == PLACEHOLDER_PROJECT_ID or repo_ref == PLACEHOLDER_REPO_REF
+
+
+def _project_repository_refs(payload: dict[str, Any] | None) -> list[str]:
+    repositories = (payload or {}).get("repositories") if isinstance(payload, dict) else None
+    if not isinstance(repositories, list):
+        return []
+    refs: list[str] = []
+    for repository in repositories:
+        if isinstance(repository, str):
+            repo_ref = repository.strip()
+        elif isinstance(repository, dict):
+            repo_ref = str(
+                repository.get("repoRef")
+                or repository.get("repo_ref")
+                or repository.get("repoId")
+                or repository.get("id")
+                or ""
+            ).strip()
+        else:
+            repo_ref = ""
+        if repo_ref:
+            refs.append(repo_ref)
+    return refs
+
+
+def _verify_or_attach_project_repository(
+    *,
+    org_id: str,
+    project_id: str,
+    repo_ref: str,
+    api_base_url: str | None = None,
+    attach_missing: bool,
+) -> tuple[str, str]:
+    if _binding_uses_placeholders(org_id, project_id, repo_ref):
+        return ("ok", "Skipping central repository linking because the binding uses placeholder values.")
+    try:
+        current_auth = read_auth_state()
+    except RuntimeError as error:
+        return ("warning", f"Could not verify the central repository link: {error}")
+    if current_auth is None:
+        message = "CLI auth not configured, so the central project repository link could not be verified."
+        return (
+            "warning",
+            f"{message} Run `dops login` and re-run `dops init`, or link `{repo_ref}` to project `{project_id}` in DecisionOps.",
+        )
+    try:
+        auth = ensure_valid_auth_state(current_auth)
+    except RuntimeError as error:
+        return ("warning", f"Could not verify the central repository link: {error}")
+
+    client = DopsClient(api_base_url=(api_base_url or auth.apiBaseUrl).rstrip("/"), token=auth.accessToken, org_id=org_id)
+    try:
+        repositories = _project_repository_refs(client.load_project_repositories(project_id))
+    except DecisionOpsApiError as error:
+        return ("error", f"Could not load project repositories for `{project_id}`: {error}")
+
+    if repo_ref in repositories:
+        return ("ok", f"Verified central repository link for `{repo_ref}` in project `{project_id}`.")
+
+    if not attach_missing:
+        if not repositories:
+            return (
+                "error",
+                f"Project `{project_id}` has no linked repositories in DecisionOps. Link `{repo_ref}` to this project and retry.",
+            )
+        linked_repositories = ", ".join(sorted(repositories))
+        return (
+            "error",
+            f"Project `{project_id}` is linked to {linked_repositories}, but not `{repo_ref}`. Update the project repository mapping in DecisionOps.",
+        )
+
+    try:
+        client.attach_repository_to_project(project_id, repo_ref)
+    except DecisionOpsApiError as error:
+        return ("error", f"Could not attach `{repo_ref}` to project `{project_id}`: {error}")
+    return ("ok", f"Linked `{repo_ref}` to project `{project_id}` in DecisionOps.")
 
 
 def _doctor_platform_issue(error: Exception) -> str:
@@ -446,6 +526,19 @@ def run_init(flags: argparse.Namespace) -> None:
         },
     )
     console.print(f"Wrote manifest: {manifest_path}")
+    link_status, link_message = _verify_or_attach_project_repository(
+        org_id=str(org_id),
+        project_id=str(project_id),
+        repo_ref=str(repo_ref),
+        api_base_url=flags.api_base_url,
+        attach_missing=True,
+    )
+    if link_status == "ok":
+        console.print(link_message)
+    elif link_status == "warning":
+        console.print(f"[yellow]{link_message}[/yellow]")
+    else:
+        raise RuntimeError(f"{link_message} The local manifest was written, but the central repository binding is still incomplete.")
 
 
 def run_install(flags: argparse.Namespace) -> None:
@@ -549,6 +642,16 @@ def run_doctor(flags: argparse.Namespace) -> None:
         issues.append("No .decisionops/manifest.toml found")
     elif not manifest.get("org_id") or not manifest.get("project_id") or not manifest.get("repo_ref"):
         issues.append("Manifest is missing required fields (org_id, project_id, or repo_ref)")
+    elif auth:
+        link_status, link_message = _verify_or_attach_project_repository(
+            org_id=str(manifest.get("org_id") or ""),
+            project_id=str(manifest.get("project_id") or ""),
+            repo_ref=str(manifest.get("repo_ref") or ""),
+            api_base_url=auth.apiBaseUrl,
+            attach_missing=False,
+        )
+        if link_status != "ok":
+            issues.append(link_message)
     platform_statuses: list[dict[str, str]] = []
     try:
         platforms = load_platforms(find_platforms_dir())
