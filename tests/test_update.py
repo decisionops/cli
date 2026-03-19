@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -15,14 +16,15 @@ class UpdateTests(unittest.TestCase):
     def test_installed_binary_path_defaults_to_user_bin(self) -> None:
         with patch("dops.command_groups.update.Path.home", return_value=Path("/tmp/example-home")):
             path = _installed_binary_path(None)
-        self.assertEqual(path, Path("/tmp/example-home/.dops/bin/dops"))
+        self.assertEqual(path, Path("/tmp/example-home/.dops/bin") / path.name)
 
     def test_run_update_reports_installed_binary_and_shell_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             install_dir = Path(temp_dir)
-            binary = install_dir / "dops"
+            binary = _installed_binary_path(str(install_dir))
             binary.write_text("#!/bin/sh\necho 0.1.3\n", encoding="utf-8")
-            binary.chmod(0o755)
+            if os.name != "nt":
+                binary.chmod(0o755)
 
             stdout = io.StringIO()
             flags = argparse.Namespace(version=None, install_dir=str(install_dir))
@@ -39,5 +41,6 @@ class UpdateTests(unittest.TestCase):
 
             output = stdout.getvalue()
             self.assertIn("Installed binary:", output)
+            self.assertIn(str(binary), output)
             self.assertIn("0.1.3", output)
             self.assertIn("Current shell still resolves `dops`", output)

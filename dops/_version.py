@@ -4,7 +4,7 @@ import subprocess
 from importlib import metadata
 from pathlib import Path
 
-DEFAULT_VERSION = "0.1.9"
+DEFAULT_VERSION = "0.1.10"
 
 
 def _normalize_version(value: str) -> str:
