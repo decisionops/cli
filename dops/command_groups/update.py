@@ -117,4 +117,4 @@ def register_update_command(subparsers: argparse._SubParsersAction[argparse.Argu
     update.add_argument("--version")
     update.add_argument("--install-dir")
     update.set_defaults(func=run_update)
-    add_examples(update, ["dops update", "dops update --version v0.1.15"])
+    add_examples(update, ["dops update", "dops update --version v0.1.16"])
