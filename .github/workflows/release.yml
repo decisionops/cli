@@ -21,7 +21,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             artifact_name: dops-linux-arm64
             binary_path: dist/dops
-          - runner: macos-13
+          - runner: macos-15-intel
             artifact_name: dops-darwin-x64
             binary_path: dist/dops
           - runner: macos-14
