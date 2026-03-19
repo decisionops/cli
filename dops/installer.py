@@ -16,10 +16,9 @@ from .config import (
 )
 from .fileio import atomic_copy_dir, atomic_write_text
 from .git import infer_default_branch, infer_repo_ref
-from .manifest import write_auth_handoff, write_manifest
+from .manifest import write_manifest
 from .platforms import (
     PlatformDefinition,
-    auth_instructions,
     context_for_paths,
     expand_path,
     load_platforms,
@@ -35,7 +34,6 @@ class InstallResult:
     installed_mcp: list[dict[str, str]] = field(default_factory=list)
     skipped_mcp: list[dict[str, str]] = field(default_factory=list)
     manifest_path: str | None = None
-    auth_handoff_path: str | None = None
     placeholders_used: bool = False
 
 
@@ -46,7 +44,6 @@ class CleanupResult:
     removed_mcp: list[dict[str, str]] = field(default_factory=list)
     skipped_mcp: list[dict[str, str]] = field(default_factory=list)
     removed_manifest_path: str | None = None
-    removed_auth_handoff_path: str | None = None
 
 
 def _ensure_skill_source(source_dir: str) -> None:
@@ -180,10 +177,9 @@ def _remove_json_map_server(config_path: str, root_key: str, server_name: str) -
 
 def _remove_file_if_present(file_path: str) -> bool:
     path = Path(file_path)
-    if not path.exists():
-        return False
-    path.unlink()
-    return True
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return existed
 
 
 def _remove_empty_dir_if_present(dir_path: str) -> None:
@@ -202,7 +198,10 @@ def build_platform(
 ) -> str:
     platform_output = Path(output_dir) / platform.id
     if platform_output.exists():
-        shutil.rmtree(platform_output)
+        try:
+            shutil.rmtree(platform_output)
+        except OSError as error:
+            raise RuntimeError(f"Could not clear existing build output at {platform_output}: {error}") from error
     context = context_for_paths(skill_name, None)
     if platform.skill and platform.skill.supported and platform.skill.build_path:
         skill_build_path = expand_path(platform.skill.build_path, context)
@@ -328,7 +327,6 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
             }
         ):
             result.built_platforms.append(entry["platform_id"])
-    auth_handoff_entries: list[dict[str, object]] = []
     for platform in selected:
         context = context_for_paths(skill_name, repo_path)
         if install_skill and platform.skill and platform.skill.supported and source_dir:
@@ -354,30 +352,6 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
             else:
                 raise RuntimeError(f"Unsupported MCP format '{platform.mcp.format}' for {platform.id}")
             result.installed_mcp.append({"platformId": platform.id, "target": target})
-            instructions = auth_instructions(
-                platform,
-                {
-                    **context,
-                    "platform_id": platform.id,
-                    "display_name": platform.display_name,
-                    "mcp_server_name": server_name,
-                    "mcp_server_url": server_url,
-                    "mcp_config_path": target,
-                },
-            )
-            if instructions:
-                auth_handoff_entries.append(
-                    {
-                        "id": platform.id,
-                        "display_name": platform.display_name,
-                        "mode": platform.auth.mode if platform.auth and platform.auth.mode else "interactive_handoff",
-                        "platform_definition": platform.file_path,
-                        "mcp_config_path": target,
-                        "instructions": instructions,
-                    }
-                )
-    if auth_handoff_entries:
-        result.auth_handoff_path = write_auth_handoff(repo_path, output_dir, auth_handoff_entries)
     return result
 
 
@@ -427,10 +401,6 @@ def cleanup_platforms(options: dict[str, object]) -> CleanupResult:
         manifest_path = str(Path(repo_path) / ".decisionops" / "manifest.toml")
         if _remove_file_if_present(manifest_path):
             result.removed_manifest_path = manifest_path
-    if repo_path and bool(options.get("remove_auth_handoff", False)):
-        auth_handoff_path = str(Path(repo_path) / ".decisionops" / "auth-handoff.toml")
-        if _remove_file_if_present(auth_handoff_path):
-            result.removed_auth_handoff_path = auth_handoff_path
     if repo_path:
         _remove_empty_dir_if_present(str(Path(repo_path) / ".decisionops"))
     return result

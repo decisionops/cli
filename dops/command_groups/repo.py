@@ -17,7 +17,7 @@ from ..git import infer_default_branch, resolve_repo_path
 from ..installer import cleanup_platforms, install_platforms
 from ..manifest import read_manifest, write_manifest
 from ..platforms import load_platforms, resolve_install_path
-from ..resources import find_platforms_dir, find_skill_source_dir
+from ..resources import find_platforms_dir, find_skill_source_dir, resolve_local_skill_repo
 from ..tls import describe_tls_setup
 from ..ui import PromptChrome, SelectOption, console, flow_chrome, prompt_confirm, prompt_select, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
 from .shared import auth_display, choose_platforms, detect_repo_ref, is_interactive, load_session_context, normalize_repo_ref, resolve_server_name, resolve_server_url
@@ -28,6 +28,17 @@ _CREATE_PROJECT = "__create_project__"
 _KEEP_EXISTING_BINDING = "__keep_existing_binding__"
 _UPDATE_EXISTING_BINDING = "__update_existing_binding__"
 _CANCEL_EXISTING_BINDING = "__cancel_existing_binding__"
+
+
+def _doctor_platform_issue(error: Exception) -> str:
+    message = str(error)
+    if "Could not find platform definitions" in message or "No platform definitions found" in message:
+        return (
+            "Could not inspect platform installs because the DecisionOps skill bundle is unavailable. "
+            "Typical setup is `dops install`, then choose Codex, Cursor, Claude Code, or VS Code. "
+            "If you are running `dops` from source, make sure the companion skill bundle is installed or adjacent to this checkout."
+        )
+    return f"Could not load platform definitions: {error}"
 
 
 def _organization_options(context: dict[str, Any] | None) -> list[SelectOption[str]]:
@@ -439,10 +450,14 @@ def run_init(flags: argparse.Namespace) -> None:
 
 def run_install(flags: argparse.Namespace) -> None:
     reset_flow_state()
-    platforms_dir = find_platforms_dir()
+    if flags.source_dir:
+        platforms_dir, resolved_source_dir = resolve_local_skill_repo(flags.source_dir)
+    else:
+        platforms_dir = find_platforms_dir()
+        resolved_source_dir = None
     selected_platforms = choose_platforms(flags.platform, platforms_dir, "Install")
     repo_path = resolve_repo_path(flags.repo_path)
-    source_dir = flags.source_dir if flags.source_dir or flags.skip_skill else find_skill_source_dir()
+    source_dir = resolved_source_dir or (None if flags.skip_skill else find_skill_source_dir())
     result = install_platforms(
         {
             "platforms_dir": platforms_dir,
@@ -482,7 +497,6 @@ def run_uninstall(flags: argparse.Namespace) -> None:
             "remove_skill": not flags.skip_skill,
             "remove_mcp": not flags.skip_mcp,
             "remove_manifest": flags.remove_manifest,
-            "remove_auth_handoff": flags.remove_auth_handoff,
         }
     )
     render_cleanup_summary(result)
@@ -558,7 +572,7 @@ def run_doctor(flags: argparse.Namespace) -> None:
                 }
             )
     except (RuntimeError, OSError, ValueError) as error:
-        issues.append(f"Could not load platform definitions: {error}")
+        issues.append(_doctor_platform_issue(error))
         platform_statuses = []
     render_doctor_report(
         auth=auth,
@@ -573,7 +587,7 @@ def run_doctor(flags: argparse.Namespace) -> None:
     )
 
 
-def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser], supported_platform_ids: list[str]) -> None:
+def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     init = subparsers.add_parser(
         "init",
         formatter_class=DopsHelpFormatter,
@@ -600,7 +614,7 @@ def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
         help="Install DecisionOps skill + MCP config for chosen platforms",
         description="Install DecisionOps skill + MCP config for chosen platforms",
     )
-    install.add_argument("-p", "--platform", action="append")
+    install.add_argument("platform", nargs="*")
     install.add_argument("--repo-path")
     install.add_argument("--api-base-url")
     install.add_argument("--org-id")
@@ -623,13 +637,19 @@ def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     add_examples(
         install,
         [
-            "dops install --platform codex",
-            "dops install --platform claude-code",
-            "dops install --platform codex --platform cursor",
-            "dops install --platform codex --skip-mcp",
+            "dops install",
+            "dops install codex",
+            "dops install codex cursor",
+            "dops install codex --skip-mcp",
         ],
     )
-    add_notes(install, [f"Supported platform ids: {', '.join(supported_platform_ids)}"])
+    add_notes(
+        install,
+        [
+            "Platform means the editor or coding agent target to install into, such as Codex, Cursor, Claude Code, or VS Code.",
+            "Available platform ids come from the downloaded DecisionOps skill repo. Run `dops platform list` to inspect them.",
+        ],
+    )
 
     uninstall = subparsers.add_parser(
         "uninstall",
@@ -638,7 +658,7 @@ def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
         description="Remove installed DecisionOps skills, MCP entries, and local auth state",
         aliases=["cleanup"],
     )
-    uninstall.add_argument("-p", "--platform", action="append")
+    uninstall.add_argument("platform", nargs="*")
     uninstall.add_argument("--repo-path")
     uninstall.add_argument("--skill-name")
     uninstall.add_argument("--server-name")
@@ -646,16 +666,22 @@ def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     uninstall.add_argument("--skip-mcp", action="store_true")
     uninstall.add_argument("--skip-auth", action="store_true")
     uninstall.add_argument("--remove-manifest", action="store_true")
-    uninstall.add_argument("--remove-auth-handoff", action="store_true")
     uninstall.set_defaults(func=run_uninstall)
     add_examples(
         uninstall,
         [
-            "dops uninstall --platform codex",
-            "dops uninstall --platform claude-code --remove-manifest --skip-auth",
+            "dops uninstall",
+            "dops uninstall codex",
+            "dops uninstall claude-code --remove-manifest --skip-auth",
         ],
     )
-    add_notes(uninstall, [f"Supported platform ids: {', '.join(supported_platform_ids)}"])
+    add_notes(
+        uninstall,
+        [
+            "Platform means the editor or coding agent target whose installed DecisionOps files should be removed.",
+            "Available platform ids come from the downloaded DecisionOps skill repo. Run `dops platform list` to inspect them.",
+        ],
+    )
 
     doctor = subparsers.add_parser(
         "doctor",

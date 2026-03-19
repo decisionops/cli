@@ -1,4 +1,5 @@
 node_modules/
+build/
 dist/
 *.tgz
 .DS_Store
@@ -10,3 +11,5 @@ __pycache__/
 *.pyc
 *.egg-info/
 dops/_build_version.py
+dops.spec
+dops-tls-check.spec

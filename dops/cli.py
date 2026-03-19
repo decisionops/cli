@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         [
             "dops login",
             "dops init --org-id acme --project-id backend --repo-ref acme/backend",
-            "dops install --platform codex",
+            "dops install",
             "dops update",
             "dops doctor",
         ],

@@ -44,25 +44,3 @@ def read_manifest(repo_path: str) -> dict[str, Any] | None:
     if not file_path.exists():
         return None
     return tomllib.loads(file_path.read_text(encoding="utf8"))
-
-
-def write_auth_handoff(repo_path: str | None, output_dir: str, entries: list[dict[str, Any]]) -> str:
-    file_path = (
-        (_decisionops_dir(repo_path) / "auth-handoff.toml")
-        if repo_path
-        else (Path(output_dir) / "auth-handoff.toml")
-    )
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["version = 1", ""]
-    for entry in entries:
-        lines.append("[[platforms]]")
-        lines.append(f"id = {_quote(str(entry['id']))}")
-        lines.append(f"display_name = {_quote(str(entry['display_name']))}")
-        lines.append(f"mode = {_quote(str(entry['mode']))}")
-        lines.append(f"platform_definition = {_quote(str(entry['platform_definition']))}")
-        lines.append(f"mcp_config_path = {_quote(str(entry['mcp_config_path']))}")
-        instructions = ", ".join(_quote(str(item)) for item in entry.get("instructions", []))
-        lines.append(f"instructions = [{instructions}]")
-        lines.append("")
-    atomic_write_text(file_path, "\n".join(lines), encoding="utf8")
-    return str(file_path)

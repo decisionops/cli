@@ -20,7 +20,10 @@ def atomic_write_text(file_path: str | Path, value: str, *, encoding: str = "utf
         os.replace(temp_path, path)
     finally:
         if os.path.exists(temp_path):
-            os.unlink(temp_path)
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
 
 def atomic_copy_dir(source_dir: str | Path, target_dir: str | Path) -> None:
@@ -51,4 +54,3 @@ def atomic_copy_dir(source_dir: str | Path, target_dir: str | Path) -> None:
             shutil.rmtree(temp_path, ignore_errors=True)
         if backup_path.exists() and target_path.exists():
             shutil.rmtree(backup_path, ignore_errors=True)
-

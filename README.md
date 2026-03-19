@@ -37,6 +37,8 @@ irm https://get.aidecisionops.com/dops.ps1 | iex
 
 The hosted installer downloads the latest released `dops` binary from GitHub Releases into `~/.dops/bin` and adds that directory to your `PATH` when needed.
 
+When you later run `dops install`, the CLI downloads and caches the DecisionOps skill repo under `~/.decisionops/resources/` as needed, then installs the selected editor/agent integration from that cache.
+
 ## Update
 
 If `dops` is already installed, update it in place with:
@@ -67,6 +69,12 @@ pip install -e .
 
 Run directly with `python -m dops` or the installed `dops` console script.
 
+To cut the next patch release from this repo, run:
+
+```bash
+bash ./publish-new-version.sh
+```
+
 | Variable | Default | Description |
 |---|---|---|
 | `DOPS_INSTALL_DIR` | `~/.dops/bin` | Install location for the binary |
@@ -85,7 +93,7 @@ cd your-repo
 dops init --org-id <org_id> --project-id <project_id>
 
 # 4. Install your editor integration
-dops install --platform codex
+dops install
 
 # 5. Verify everything is in place
 dops doctor
@@ -117,21 +125,20 @@ There is no API key or token-based alternative for IDE MCP authentication.
 | Path | Written by | Purpose |
 |---|---|---|
 | `.decisionops/manifest.toml` | `dops init`, `dops install` | Binds the repo to an org/project and records MCP server details |
-| `.decisionops/auth-handoff.toml` | `dops install` | Tells the editor or MCP client how to complete the first interactive auth handoff |
-| `.mcp.json` | `dops install -p claude-code` | Claude Code project MCP config |
-| `.cursor/mcp.json` | `dops install -p cursor` | Cursor project MCP config |
-| `.vscode/mcp.json` | `dops install -p vscode` | VS Code project MCP config |
+| `.mcp.json` | `dops install claude-code` | Claude Code project MCP config |
+| `.cursor/mcp.json` | `dops install cursor` | Cursor project MCP config |
+| `.vscode/mcp.json` | `dops install vscode` | VS Code project MCP config |
 
 ### In your user config
 
 | Path | Written by | Purpose |
 |---|---|---|
 | `~/.decisionops/auth.json` | `dops login` | Stores CLI auth state |
-| `~/.codex/skills/decision-ops` | `dops install -p codex` | Installs the DecisionOps skill for Codex |
-| `~/.codex/config.toml` | `dops install -p codex` | Adds the DecisionOps MCP server to Codex |
-| `~/.claude/skills/decision-ops` | `dops install -p claude-code` | Installs the DecisionOps skill for Claude Code |
-| `~/.cursor/skills/decision-ops` | `dops install -p cursor` | Installs the DecisionOps skill for Cursor |
-| `~/.antigravity/skills/decision-ops` | `dops install -p antigravity` | Installs the DecisionOps skill for Antigravity |
+| `~/.codex/skills/decision-ops` | `dops install codex` | Installs the DecisionOps skill for Codex |
+| `~/.codex/config.toml` | `dops install codex` | Adds the DecisionOps MCP server to Codex |
+| `~/.claude/skills/decision-ops` | `dops install claude-code` | Installs the DecisionOps skill for Claude Code |
+| `~/.cursor/skills/decision-ops` | `dops install cursor` | Installs the DecisionOps skill for Cursor |
+| `~/.antigravity/skills/decision-ops` | `dops install antigravity` | Installs the DecisionOps skill for Antigravity |
 
 ## What success looks like
 
@@ -199,28 +206,29 @@ dops init --allow-placeholders
 ### Install an editor integration
 
 ```bash
-dops install --platform codex
-dops install --platform claude-code
-dops install --platform cursor
-dops install --platform vscode
+dops install
+dops install codex
+dops install claude-code
+dops install cursor
+dops install vscode
 ```
 
 Install multiple targets at once:
 
 ```bash
-dops install --platform codex --platform claude-code
+dops install codex claude-code
 ```
 
 Only write the skill:
 
 ```bash
-dops install --platform codex --skip-mcp
+dops install codex --skip-mcp
 ```
 
 Only write the MCP config:
 
 ```bash
-dops install --platform codex --skip-skill
+dops install codex --skip-skill
 ```
 
 ### Verify or troubleshoot setup
@@ -233,8 +241,8 @@ dops doctor --repo-path /path/to/repo
 ### Remove the integration
 
 ```bash
-dops uninstall --platform codex --skip-auth
-dops uninstall --platform claude-code --remove-manifest --skip-auth
+dops uninstall codex --skip-auth
+dops uninstall claude-code --remove-manifest --skip-auth
 ```
 
 ## Working with decisions

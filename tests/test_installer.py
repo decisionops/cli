@@ -4,8 +4,17 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from dops.installer import _remove_json_map_server, _upsert_json_map, cleanup_platforms, install_platforms
+from dops.installer import (
+    _remove_file_if_present,
+    _remove_json_map_server,
+    _upsert_json_map,
+    build_platform,
+    cleanup_platforms,
+    install_platforms,
+)
+from dops.platforms import load_platforms
 
 
 class InstallerTests(unittest.TestCase):
@@ -68,7 +77,6 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue((self.repo_path / ".skills" / "decision-ops" / "SKILL.md").exists())
         self.assertTrue((self.repo_path / ".mcp.json").exists())
         self.assertTrue((self.repo_path / ".decisionops" / "manifest.toml").exists())
-        self.assertTrue((self.repo_path / ".decisionops" / "auth-handoff.toml").exists())
         self.assertEqual(result.installed_skills[0]["platformId"], "test")
 
         cleanup = cleanup_platforms(
@@ -80,13 +88,11 @@ class InstallerTests(unittest.TestCase):
                 "remove_skill": True,
                 "remove_mcp": True,
                 "remove_manifest": True,
-                "remove_auth_handoff": True,
             }
         )
         self.assertFalse((self.repo_path / ".skills" / "decision-ops").exists())
         self.assertFalse((self.repo_path / ".mcp.json").exists())
         self.assertFalse((self.repo_path / ".decisionops" / "manifest.toml").exists())
-        self.assertFalse((self.repo_path / ".decisionops" / "auth-handoff.toml").exists())
         self.assertEqual(cleanup.removed_skills[0]["platformId"], "test")
 
     def test_upsert_json_map_reports_corrupt_existing_file(self) -> None:
@@ -102,3 +108,32 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as raised:
             _remove_json_map_server(str(config_path), "mcpServers", "decision-ops")
         self.assertIn("Invalid JSON in MCP config", str(raised.exception))
+
+    def test_remove_file_if_present_tolerates_missing_race(self) -> None:
+        file_path = self.repo_path / "manifest.toml"
+        file_path.write_text("hello\n", encoding="utf8")
+
+        def simulated_unlink(path: Path, *, missing_ok: bool = False) -> None:
+            self.assertTrue(missing_ok)
+
+        with mock.patch("dops.installer.Path.unlink", autospec=True, side_effect=simulated_unlink):
+            self.assertTrue(_remove_file_if_present(str(file_path)))
+
+    def test_build_platform_wraps_existing_output_removal_error(self) -> None:
+        output_dir = Path(self.temp_dir) / "build"
+        platform_output = output_dir / "test"
+        platform_output.mkdir(parents=True)
+        platform = load_platforms(str(self.platforms_dir))["test"]
+
+        with mock.patch("dops.installer.shutil.rmtree", side_effect=OSError("directory is locked")):
+            with self.assertRaises(RuntimeError) as raised:
+                build_platform(
+                    platform,
+                    "decision-ops",
+                    str(self.skill_source),
+                    str(output_dir),
+                    "decision-ops-mcp",
+                    "https://api.example.com/mcp",
+                )
+
+        self.assertIn("Could not clear existing build output", str(raised.exception))

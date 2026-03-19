@@ -108,22 +108,35 @@ def choose_platforms(
     if initial_ids:
         return initial_ids
     if not is_interactive():
-        raise RuntimeError("No platform selected. Use --platform in non-interactive mode.")
+        example_command = "dops install codex" if eyebrow == "Install" else "dops uninstall codex"
+        raise RuntimeError(f"No install target selected. Re-run interactively or pass platform ids like `{example_command}`.")
     platforms = list(load_platforms(platforms_dir).values())
     chosen: set[str] = set()
     add_another = True
+    is_install = eyebrow == "Install"
+    title = (
+        "Which editor or coding agent should DecisionOps install into?"
+        if is_install
+        else "Which editor or coding agent should DecisionOps clean up?"
+    )
+    description = (
+        "Platform means the target editor or agent integration, such as Codex, Cursor, Claude Code, or VS Code. "
+        "You can pick more than one."
+        if is_install
+        else "Platform means the target editor or agent integration whose DecisionOps files should be removed."
+    )
     while add_another:
         platform_id = prompt_select(
-            f"Choose a platform to {'install' if eyebrow == 'Install' else 'clean up'}",
+            title,
             [
                 SelectOption(
                     label=platform.display_name,
                     value=platform.id,
-                    description=(f"Target id: {platform.id}" if with_descriptions else None),
+                    description=(f"Platform id: {platform.id}" if with_descriptions else None),
                 )
                 for platform in platforms
             ],
-            flow_chrome(PromptChrome(eyebrow=eyebrow)),
+            flow_chrome(PromptChrome(eyebrow=eyebrow, description=description)),
         )
         chosen.add(platform_id)
         remaining = [platform for platform in platforms if platform.id not in chosen]

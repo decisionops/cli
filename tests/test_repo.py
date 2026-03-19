@@ -6,11 +6,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from dops.command_groups.repo import _CREATE_PROJECT, _KEEP_EXISTING_BINDING, _MANUAL_SELECTION, _existing_binding_access_summary, _organization_options, _pick_option, _project_options, _resolve_binding_from_workspace_context, run_init
+from dops.command_groups.repo import _CREATE_PROJECT, _KEEP_EXISTING_BINDING, _MANUAL_SELECTION, _doctor_platform_issue, _existing_binding_access_summary, _organization_options, _pick_option, _project_options, _resolve_binding_from_workspace_context, run_init
 from dops.ui import SelectOption
 
 
 class RepoCommandTests(unittest.TestCase):
+    def test_doctor_platform_issue_translates_missing_bundle_error(self) -> None:
+        message = _doctor_platform_issue(
+            RuntimeError("Could not find platform definitions. Ensure @decisionops/skill is installed or is adjacent.")
+        )
+        self.assertIn("dops install", message)
+        self.assertIn("running `dops` from source", message)
+        self.assertNotIn("@decisionops/skill", message)
+
     def test_organization_options_include_name_and_id(self) -> None:
         options = _organization_options(
             {

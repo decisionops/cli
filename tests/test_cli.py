@@ -49,7 +49,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bind and verify a repository", result.stdout)
         self.assertIn("Examples:", result.stdout)
         self.assertIn("config show", result.stdout)
-        self.assertIn("dops install --platform codex", result.stdout)
+        self.assertIn("dops install", result.stdout)
 
     def test_version(self) -> None:
         result = run_cli("--version")
@@ -72,8 +72,13 @@ class CliTests(unittest.TestCase):
         result = run_cli("install", "--help")
         self.assertEqual(result.returncode, 0)
         self.assertIn("Install DecisionOps skill", result.stdout)
-        self.assertIn("--platform", result.stdout)
-        self.assertIn("Supported platform ids: codex, claude-code, cursor, vscode, antigravity", result.stdout)
+        self.assertIn("Platform means the editor or coding agent target", result.stdout)
+        self.assertIn("dops platform list", result.stdout)
+
+    def test_uninstall_help_explains_platform_meaning(self) -> None:
+        result = run_cli("uninstall", "--help")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Platform means the editor or coding agent target", result.stdout)
 
     def test_auth_status_accepts_env_token(self) -> None:
         result = run_cli_with_env({"DECISIONOPS_ACCESS_TOKEN": "dop_test_token"}, "auth", "status")

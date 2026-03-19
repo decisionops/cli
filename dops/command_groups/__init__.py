@@ -10,14 +10,12 @@ from .platforms import register_platform_commands
 from .repo import register_repo_commands
 from .update import register_update_command
 
-SUPPORTED_PLATFORM_IDS = ["codex", "claude-code", "cursor", "vscode", "antigravity"]
-
 
 def register_all_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     register_auth_commands(subparsers)
     register_config_commands(subparsers)
-    register_repo_commands(subparsers, SUPPORTED_PLATFORM_IDS)
+    register_repo_commands(subparsers)
     register_decision_commands(subparsers)
     register_operation_commands(subparsers)
-    register_platform_commands(subparsers, SUPPORTED_PLATFORM_IDS)
+    register_platform_commands(subparsers)
     register_update_command(subparsers)

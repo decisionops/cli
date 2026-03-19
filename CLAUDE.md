@@ -19,6 +19,9 @@ python -m unittest discover -s tests -v
 # Build binary
 pip install pyinstaller
 pyinstaller --onefile --name dops --hidden-import=certifi --collect-data=certifi --hidden-import=_ssl dops_bootstrap.py
+
+# Publish the next patch release
+bash ./publish-new-version.sh
 ```
 
 ## Project Structure
@@ -72,6 +75,7 @@ pyinstaller --onefile --name dops --hidden-import=certifi --collect-data=certifi
 
 - Release: triggered by `v*` tags, builds binaries on Ubuntu/macOS/Windows (x64/arm64)
 - Worker deploy: on push to main when `worker/` or `wrangler.jsonc` changes
+- Prefer `bash ./publish-new-version.sh` for releases. It bumps versions, runs tests, commits, tags, pushes, waits for GitHub Actions, and writes a release report.
 
 ## Dependencies
 

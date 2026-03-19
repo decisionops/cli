@@ -186,6 +186,18 @@ DEFAULT_AUTH_TOKEN_ENV = _string_value(
     ("auth_token_env",),
     ("auth", "token_env"),
 )
+DEFAULT_SKILL_REPO_URL = _string_value(
+    "DECISIONOPS_SKILL_REPO_URL",
+    "https://github.com/decisionops/skill.git",
+    ("skill_repo_url",),
+    ("skill", "repo_url"),
+)
+DEFAULT_SKILL_REPO_REF = _string_value(
+    "DECISIONOPS_SKILL_REPO_REF",
+    "main",
+    ("skill_repo_ref",),
+    ("skill", "repo_ref"),
+)
 
 
 def config_error() -> str | None:
@@ -209,4 +221,6 @@ def effective_config() -> dict[str, object]:
         "verbose": DEFAULT_VERBOSE,
         "debug": DEFAULT_DEBUG,
         "auth_token_env": DEFAULT_AUTH_TOKEN_ENV,
+        "skill_repo_url": DEFAULT_SKILL_REPO_URL,
+        "skill_repo_ref": DEFAULT_SKILL_REPO_REF,
     }
