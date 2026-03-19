@@ -108,6 +108,32 @@ class DopsClient:
     def load_project_repositories(self, project_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/admin/projects/{urllib.parse.quote(project_id)}/repositories")
 
+    def switch_active_org(self, org_id: str) -> dict[str, Any]:
+        payload = self.request("POST", "/v1/auth/switch-org", {"orgId": org_id})
+        return payload if isinstance(payload, dict) else {}
+
+    def switch_active_project(self, project_id: str) -> dict[str, Any]:
+        payload = self.request("POST", "/v1/auth/switch-project", {"projectId": project_id})
+        return payload if isinstance(payload, dict) else {}
+
+    def create_organization(self, name: str, *, auto_generate_service_token: bool = False) -> dict[str, Any]:
+        payload = self.request(
+            "POST",
+            "/v1/orgs",
+            {"name": name, "autoGenerateServiceToken": auto_generate_service_token},
+        )
+        if isinstance(payload, dict):
+            organization = payload.get("organization")
+            return organization if isinstance(organization, dict) else payload
+        return {}
+
+    def create_project(self, name: str, *, set_default: bool = False) -> dict[str, Any]:
+        payload = self.request("POST", "/v1/projects", {"name": name, "setDefault": set_default})
+        if isinstance(payload, dict):
+            project = payload.get("project")
+            return project if isinstance(project, dict) else payload
+        return {}
+
     def list_decisions(self, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         params = urllib.parse.urlencode({key: value for key, value in (filters or {}).items() if value is not None})
         payload = self.request("GET", f"/v1/decisions{'?' + params if params else ''}")

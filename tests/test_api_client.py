@@ -52,3 +52,33 @@ class ApiClientTests(unittest.TestCase):
             with self.assertRaises(DecisionOpsApiError) as raised:
                 client.request("GET", "/v1/auth/me")
         self.assertIn("invalid JSON", str(raised.exception))
+
+    def test_create_project_returns_project_payload(self) -> None:
+        client = DopsClient(api_base_url="https://api.example.com", token="dop_token")
+        with patch.object(
+            DopsClient,
+            "request",
+            return_value={"ok": True, "project": {"id": "proj_123", "name": "Payments Platform"}},
+        ) as request:
+            self.assertEqual(
+                client.create_project("Payments Platform", set_default=False),
+                {"id": "proj_123", "name": "Payments Platform"},
+            )
+        request.assert_called_once_with("POST", "/v1/projects", {"name": "Payments Platform", "setDefault": False})
+
+    def test_create_organization_returns_organization_payload(self) -> None:
+        client = DopsClient(api_base_url="https://api.example.com", token="dop_token")
+        with patch.object(
+            DopsClient,
+            "request",
+            return_value={"ok": True, "organization": {"orgId": "org_123", "orgName": "Acme"}},
+        ) as request:
+            self.assertEqual(
+                client.create_organization("Acme", auto_generate_service_token=False),
+                {"orgId": "org_123", "orgName": "Acme"},
+            )
+        request.assert_called_once_with(
+            "POST",
+            "/v1/orgs",
+            {"name": "Acme", "autoGenerateServiceToken": False},
+        )

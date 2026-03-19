@@ -4,10 +4,12 @@ import argparse
 import platform
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from .. import __version__
+from ..api_client import DopsClient
 from ..argparse_utils import DopsHelpFormatter, add_examples, add_notes
 from ..auth import clear_auth_state, ensure_valid_auth_state, read_auth_state, revoke_auth_state
 from ..config import PLACEHOLDER_ORG_ID, PLACEHOLDER_PROJECT_ID, PLACEHOLDER_REPO_REF, config_error, config_path
@@ -17,8 +19,15 @@ from ..manifest import read_manifest, write_manifest
 from ..platforms import load_platforms, resolve_install_path
 from ..resources import find_platforms_dir, find_skill_source_dir
 from ..tls import describe_tls_setup
-from ..ui import PromptChrome, SelectOption, console, flow_chrome, prompt_select, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
+from ..ui import PromptChrome, SelectOption, console, flow_chrome, prompt_confirm, prompt_select, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
 from .shared import auth_display, choose_platforms, detect_repo_ref, is_interactive, load_session_context, normalize_repo_ref, resolve_server_name, resolve_server_url
+
+_MANUAL_SELECTION = "__manual__"
+_CREATE_ORGANIZATION = "__create_organization__"
+_CREATE_PROJECT = "__create_project__"
+_KEEP_EXISTING_BINDING = "__keep_existing_binding__"
+_UPDATE_EXISTING_BINDING = "__update_existing_binding__"
+_CANCEL_EXISTING_BINDING = "__cancel_existing_binding__"
 
 
 def _organization_options(context: dict[str, Any] | None) -> list[SelectOption[str]]:
@@ -59,16 +68,201 @@ def _project_options(context: dict[str, Any] | None, org_id: str) -> list[Select
     return options
 
 
-def _pick_option(title: str, options: list[SelectOption[str]], *, description: str) -> str:
+def _pick_option(
+    title: str,
+    options: list[SelectOption[str]],
+    *,
+    description: str,
+    create_label: str,
+    create_value: str,
+    manual_label: str,
+) -> str:
+    prompt_options: list[SelectOption[str]]
     if len(options) == 1:
-        console.print(f"[dim]{description}[/dim]")
-        console.print(f"Using {title.lower()}: [cyan]{options[0].label}[/cyan]")
-        return options[0].value
+        prompt_options = [
+            SelectOption(
+                label=f"Use {options[0].label}",
+                value=options[0].value,
+                description=options[0].description,
+            ),
+            SelectOption(
+                label=create_label,
+                value=create_value,
+                description="Create a new resource from the CLI instead of using the existing default.",
+            ),
+            SelectOption(
+                label=manual_label,
+                value=_MANUAL_SELECTION,
+                description="Use this if you already know the exact id you want to bind.",
+            ),
+        ]
+    else:
+        prompt_options = [
+            *options,
+            SelectOption(
+                label=create_label,
+                value=create_value,
+                description="Create a new resource from the CLI.",
+            ),
+            SelectOption(
+                label=manual_label,
+                value=_MANUAL_SELECTION,
+                description="Use this if you already know the exact id you want to bind.",
+            ),
+        ]
     return prompt_select(
         title,
-        options,
+        prompt_options,
         flow_chrome(PromptChrome(description=description)),
     )
+
+
+def _organization_id(organization: dict[str, Any] | None) -> str | None:
+    org_id = str((organization or {}).get("orgId") or (organization or {}).get("id") or "").strip()
+    return org_id or None
+
+
+def _project_id(project: dict[str, Any] | None) -> str | None:
+    project_id = str((project or {}).get("id") or (project or {}).get("projectId") or "").strip()
+    return project_id or None
+
+
+def _projects_in_context(context: dict[str, Any] | None, org_id: str) -> list[dict[str, Any]]:
+    projects: list[dict[str, Any]] = []
+    if context and context.get("activeProject"):
+        projects.append(context["activeProject"])
+    projects.extend(list((context or {}).get("projects") or []))
+    return [project for project in projects if str(project.get("orgId") or "").strip() == org_id]
+
+
+def _existing_binding_access_summary(manifest: dict[str, Any], api_base_url: str | None = None) -> tuple[str, list[str]]:
+    org_id = str(manifest.get("org_id") or "").strip()
+    project_id = str(manifest.get("project_id") or "").strip()
+    if not org_id or not project_id:
+        return ("unknown", ["Binding check: manifest is missing org_id or project_id."])
+    try:
+        current_auth = read_auth_state()
+    except RuntimeError as error:
+        return ("unknown", [f"Binding check: {error}"])
+    if current_auth is None:
+        return ("unknown", ["Binding check: run `dops login` to verify access to the existing binding."])
+    try:
+        auth = ensure_valid_auth_state(current_auth)
+    except RuntimeError as error:
+        return ("unknown", [f"Binding check: {error}"])
+    context = load_session_context(auth.accessToken, (api_base_url or auth.apiBaseUrl).rstrip("/"))
+    if not context:
+        return ("unknown", ["Binding check: could not load the current DecisionOps workspace context."])
+
+    original_org_id = _organization_id(context.get("activeOrganization") if isinstance(context, dict) else None)
+    accessible_org_ids = {_organization_id(org) for org in [context.get("activeOrganization"), *((context.get("organizations") or []))]}
+    accessible_org_ids.discard(None)
+    if org_id not in accessible_org_ids:
+        return ("inaccessible", [f"Binding check: current auth cannot access org_id `{org_id}`."])
+    if org_id != original_org_id:
+        return (
+            "unknown",
+            [
+                f"Binding check: current auth can access org_id `{org_id}`, but project access could not be verified without switching the active workspace.",
+            ],
+        )
+
+    available_project_ids = {_project_id(project) for project in _projects_in_context(context, org_id)}
+    available_project_ids.discard(None)
+    if project_id not in available_project_ids:
+        return ("inaccessible", [f"Binding check: current auth cannot access project_id `{project_id}` in org `{org_id}`."])
+    return ("accessible", ["Binding check: current auth can access this existing org/project binding."])
+
+
+def _manifest_file_path(repo_path: str) -> Path:
+    return Path(repo_path) / ".decisionops" / "manifest.toml"
+
+
+def _load_existing_manifest(repo_path: str) -> tuple[dict[str, Any] | None, str | None, bool]:
+    manifest_path = _manifest_file_path(repo_path)
+    if not manifest_path.exists():
+        return None, None, False
+    try:
+        return read_manifest(repo_path), None, True
+    except tomllib.TOMLDecodeError as error:
+        return None, f"Existing manifest.toml is invalid: {error}", True
+
+
+def _confirm_rebinding_for_invalid_manifest(repo_path: str, manifest_error: str) -> bool:
+    choice = prompt_select(
+        "This repository has an unreadable binding manifest",
+        [
+            SelectOption(
+                label="Replace manifest with a new binding",
+                value=_UPDATE_EXISTING_BINDING,
+                description="Write a fresh manifest.toml and continue with a new binding.",
+            ),
+            SelectOption(
+                label="Cancel",
+                value=_CANCEL_EXISTING_BINDING,
+                description="Abort without touching the existing manifest file.",
+            ),
+        ],
+        flow_chrome(
+            PromptChrome(
+                description="\n".join(
+                    [
+                        f"Repository: {repo_path}",
+                        manifest_error,
+                    ]
+                )
+            )
+        ),
+    )
+    if choice == _CANCEL_EXISTING_BINDING:
+        raise RuntimeError("Cancelled.")
+    return True
+
+
+def _confirm_rebinding(repo_path: str, manifest: dict[str, Any], api_base_url: str | None = None) -> bool:
+    access_state, access_lines = _existing_binding_access_summary(manifest, api_base_url)
+    state_label = {
+        "accessible": "Current auth status: accessible",
+        "inaccessible": "Current auth status: inaccessible",
+        "unknown": "Current auth status: could not verify",
+    }[access_state]
+    description = "\n".join(
+        [
+            f"Repository: {repo_path}",
+            f"Current org_id: {manifest.get('org_id', '(missing)')}",
+            f"Current project_id: {manifest.get('project_id', '(missing)')}",
+            f"Current repo_ref: {manifest.get('repo_ref', '(missing)')}",
+            state_label,
+            *access_lines,
+        ]
+    )
+    choice = prompt_select(
+        "This repository is already bound",
+        [
+            SelectOption(
+                label="Keep existing binding",
+                value=_KEEP_EXISTING_BINDING,
+                description="Leave the current manifest.toml in place and exit.",
+            ),
+            SelectOption(
+                label="Update binding",
+                value=_UPDATE_EXISTING_BINDING,
+                description="Replace the current manifest.toml with a new org/project binding.",
+            ),
+            SelectOption(
+                label="Cancel",
+                value=_CANCEL_EXISTING_BINDING,
+                description="Abort without changing the current binding.",
+            ),
+        ],
+        flow_chrome(PromptChrome(description=description)),
+    )
+    if choice == _KEEP_EXISTING_BINDING:
+        console.print("Keeping the existing repository binding.")
+        return False
+    if choice == _CANCEL_EXISTING_BINDING:
+        raise RuntimeError("Cancelled.")
+    return True
 
 
 def _resolve_binding_from_workspace_context(
@@ -89,6 +283,7 @@ def _resolve_binding_from_workspace_context(
         auth = ensure_valid_auth_state(current_auth)
     except RuntimeError:
         return org_id, project_id
+    client = DopsClient(api_base_url=(api_base_url or auth.apiBaseUrl).rstrip("/"), token=auth.accessToken)
     context = load_session_context(auth.accessToken, api_base_url or auth.apiBaseUrl)
     if not context:
         return org_id, project_id
@@ -96,20 +291,71 @@ def _resolve_binding_from_workspace_context(
     resolved_project_id = project_id
     if not resolved_org_id:
         org_options = _organization_options(context)
-        if org_options:
-            resolved_org_id = _pick_option(
-                "Choose organization",
-                org_options,
-                description="Select the DecisionOps organization that should own this repository binding.",
+        org_choice = _pick_option(
+            "Choose organization",
+            org_options,
+            description="Select the DecisionOps organization that should own this repository binding.",
+            create_label="Create a new organization",
+            create_value=_CREATE_ORGANIZATION,
+            manual_label="Enter a different org_id",
+        )
+        if org_choice == _CREATE_ORGANIZATION:
+            org_name = prompt_text(
+                title="New organization name",
+                placeholder="Acme Workspace",
+                validate=lambda value: None if value else "Organization name is required.",
             )
+            created_org = with_spinner(
+                "Creating organization...",
+                lambda: client.create_organization(org_name, auto_generate_service_token=False),
+            )
+            resolved_org_id = _organization_id(created_org)
+            if not resolved_org_id:
+                raise RuntimeError("DecisionOps API did not return an organization id for the new organization.")
+            context = load_session_context(auth.accessToken, client.api_base_url) or context
+        elif org_choice != _MANUAL_SELECTION:
+            resolved_org_id = org_choice
+            active_org_id = _organization_id(context.get("activeOrganization") if isinstance(context, dict) else None)
+            if resolved_org_id != active_org_id:
+                with_spinner("Switching active organization...", lambda: client.switch_active_org(resolved_org_id))
+                context = load_session_context(auth.accessToken, client.api_base_url) or context
     if not resolved_project_id and resolved_org_id:
         project_options = _project_options(context, resolved_org_id)
-        if project_options:
-            resolved_project_id = _pick_option(
-                "Choose project",
-                project_options,
-                description="Select the DecisionOps project that should govern this repository.",
+        project_choice = _pick_option(
+            "Choose project",
+            project_options,
+            description="Select the DecisionOps project that should govern this repository.",
+            create_label="Create a new project",
+            create_value=_CREATE_PROJECT,
+            manual_label="Enter a different project_id",
+        )
+        if project_choice == _CREATE_PROJECT:
+            project_name = prompt_text(
+                title="New project name",
+                placeholder="Payments Platform",
+                validate=lambda value: None if value else "Project name is required.",
             )
+            set_default = prompt_confirm(
+                "Make this the default project for this organization?",
+                False,
+                flow_chrome(PromptChrome(description="Default projects are selected automatically for new sessions.")),
+            )
+            created_project = with_spinner(
+                "Creating project...",
+                lambda: client.create_project(project_name, set_default=set_default),
+            )
+            resolved_project_id = _project_id(created_project)
+            if not resolved_project_id:
+                raise RuntimeError("DecisionOps API did not return a project id for the new project.")
+            if not set_default:
+                with_spinner("Switching active project...", lambda: client.switch_active_project(resolved_project_id))
+            context = load_session_context(auth.accessToken, client.api_base_url) or context
+        elif project_choice != _MANUAL_SELECTION:
+            resolved_project_id = project_choice
+            active_project_id = _project_id(context.get("activeProject") if isinstance(context, dict) else None)
+            if resolved_project_id != active_project_id:
+                with_spinner("Switching active project...", lambda: client.switch_active_project(resolved_project_id))
+                context = load_session_context(auth.accessToken, client.api_base_url) or context
     return resolved_org_id, resolved_project_id
 
 
@@ -118,6 +364,20 @@ def run_init(flags: argparse.Namespace) -> None:
     repo_path = resolve_repo_path(flags.repo_path)
     if not repo_path:
         raise RuntimeError("Could not determine repository path. Use --repo-path.")
+    existing_manifest, existing_manifest_error, manifest_exists = _load_existing_manifest(repo_path)
+    if manifest_exists and existing_manifest_error:
+        if not is_interactive():
+            raise RuntimeError(
+                f"{existing_manifest_error} Re-run `dops init` interactively to repair or replace the binding."
+            )
+        _confirm_rebinding_for_invalid_manifest(repo_path, existing_manifest_error)
+    elif existing_manifest:
+        if not is_interactive():
+            raise RuntimeError(
+                "This repository already has .decisionops/manifest.toml. Re-run `dops init` interactively to confirm rebinding."
+            )
+        if not _confirm_rebinding(repo_path, existing_manifest, flags.api_base_url):
+            return
     allow_placeholders = bool(flags.allow_placeholders)
     detected_repo_ref = normalize_repo_ref(flags.repo_ref) if flags.repo_ref else detect_repo_ref(repo_path)
     default_branch = flags.default_branch or infer_default_branch(repo_path)
