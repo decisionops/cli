@@ -95,6 +95,52 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.repo_path / ".decisionops" / "manifest.toml").exists())
         self.assertEqual(cleanup.removed_skills[0]["platformId"], "test")
 
+    def test_install_reuses_existing_manifest_when_ids_are_not_passed(self) -> None:
+        decisionops_dir = self.repo_path / ".decisionops"
+        decisionops_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = decisionops_dir / "manifest.toml"
+        manifest_path.write_text(
+            "\n".join(
+                [
+                    "version = 1",
+                    'org_id = "org_existing"',
+                    'project_id = "proj_existing"',
+                    'repo_ref = "acme/existing"',
+                    'repo_id = "repo_existing"',
+                    'default_branch = "main"',
+                    'mcp_server_name = "existing-mcp"',
+                    'mcp_server_url = "https://existing.example.com/mcp"',
+                    "",
+                ]
+            ),
+            encoding="utf8",
+        )
+
+        result = install_platforms(
+            {
+                "platforms_dir": str(self.platforms_dir),
+                "selected_platforms": ["test"],
+                "skill_name": "decision-ops",
+                "source_dir": str(self.skill_source),
+                "repo_path": str(self.repo_path),
+                "install_skill": True,
+                "install_mcp": True,
+                "write_manifest": True,
+            }
+        )
+
+        manifest = manifest_path.read_text(encoding="utf8")
+        mcp_config = (self.repo_path / ".mcp.json").read_text(encoding="utf8")
+        self.assertEqual(result.manifest_path, str(manifest_path))
+        self.assertIn('org_id = "org_existing"', manifest)
+        self.assertIn('project_id = "proj_existing"', manifest)
+        self.assertIn('repo_ref = "acme/existing"', manifest)
+        self.assertIn('repo_id = "repo_existing"', manifest)
+        self.assertIn('mcp_server_name = "existing-mcp"', manifest)
+        self.assertIn('mcp_server_url = "https://existing.example.com/mcp"', manifest)
+        self.assertIn('"existing-mcp"', mcp_config)
+        self.assertIn("https://existing.example.com/mcp", mcp_config)
+
     def test_upsert_json_map_reports_corrupt_existing_file(self) -> None:
         config_path = self.repo_path / ".mcp.json"
         config_path.write_text("{broken", encoding="utf8")

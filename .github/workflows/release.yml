@@ -33,10 +33,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -76,6 +76,11 @@ jobs:
           cp "${{ matrix.binary_path }}" "dist/${{ matrix.artifact_name }}"
 
       - name: Publish GitHub release artifact
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/${{ matrix.artifact_name }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" "dist/${{ matrix.artifact_name }}" --clobber

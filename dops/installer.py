@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from .config import (
 )
 from .fileio import atomic_copy_dir, atomic_write_text
 from .git import infer_default_branch, infer_repo_ref
-from .manifest import write_manifest
+from .manifest import read_manifest, write_manifest
 from .platforms import (
     PlatformDefinition,
     context_for_paths,
@@ -266,6 +267,7 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
     install_mcp = bool(options.get("install_mcp", True))
     should_write_manifest = bool(options.get("write_manifest", True))
     allow_placeholders = bool(options.get("allow_placeholders", False))
+    existing_manifest: dict[str, object] | None = None
     if source_dir:
         _ensure_skill_source(source_dir)
     if not source_dir and install_skill and any(platform.skill and platform.skill.supported for platform in selected):
@@ -275,23 +277,35 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
     )
     if repo_required and not repo_path:
         raise RuntimeError("--repo-path is required for manifest writes or project-scoped MCP config.")
+    if should_write_manifest and repo_path:
+        try:
+            existing_manifest = read_manifest(repo_path)
+        except tomllib.TOMLDecodeError as error:
+            raise RuntimeError(
+                "Existing .decisionops/manifest.toml is invalid. Run `dops init` interactively to repair it, or pass --skip-manifest."
+            ) from error
+        if existing_manifest:
+            if not options.get("server_name") and existing_manifest.get("mcp_server_name"):
+                server_name = str(existing_manifest["mcp_server_name"])
+            if not options.get("server_url") and existing_manifest.get("mcp_server_url"):
+                server_url = str(existing_manifest["mcp_server_url"])
     result = InstallResult()
     if should_write_manifest and repo_path:
-        org_id = options.get("org_id")
+        org_id = options.get("org_id") or (existing_manifest.get("org_id") if existing_manifest else None)
         if not org_id:
             if allow_placeholders:
                 result.placeholders_used = True
                 org_id = PLACEHOLDER_ORG_ID
             else:
                 raise RuntimeError("--org-id is required when writing a manifest.")
-        project_id = options.get("project_id")
+        project_id = options.get("project_id") or (existing_manifest.get("project_id") if existing_manifest else None)
         if not project_id:
             if allow_placeholders:
                 result.placeholders_used = True
                 project_id = PLACEHOLDER_PROJECT_ID
             else:
                 raise RuntimeError("--project-id is required when writing a manifest.")
-        repo_ref = options.get("repo_ref")
+        repo_ref = options.get("repo_ref") or (existing_manifest.get("repo_ref") if existing_manifest else None)
         if not repo_ref:
             try:
                 repo_ref = infer_repo_ref(repo_path)
@@ -301,14 +315,22 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
                     repo_ref = PLACEHOLDER_REPO_REF
                 else:
                     raise RuntimeError("Could not infer repo_ref from git remote.")
-        default_branch = str(options.get("default_branch") or infer_default_branch(repo_path))
+        default_branch = str(
+            options.get("default_branch")
+            or (existing_manifest.get("default_branch") if existing_manifest else None)
+            or infer_default_branch(repo_path)
+        )
         result.manifest_path = write_manifest(
             repo_path,
             {
                 "org_id": str(org_id),
                 "project_id": str(project_id),
                 "repo_ref": str(repo_ref),
-                "repo_id": str(options["repo_id"]) if options.get("repo_id") else None,
+                "repo_id": (
+                    str(options["repo_id"])
+                    if options.get("repo_id")
+                    else (str(existing_manifest["repo_id"]) if existing_manifest and existing_manifest.get("repo_id") else None)
+                ),
                 "default_branch": default_branch,
                 "mcp_server_name": server_name,
                 "mcp_server_url": server_url,
