@@ -158,6 +158,46 @@ def decision_id(decision: dict[str, Any]) -> str:
     return str(decision.get("decisionId") or decision.get("id") or "")
 
 
+def project_repository_refs(payload: dict[str, Any] | None) -> list[str]:
+    repositories = (payload or {}).get("repositories") if isinstance(payload, dict) else None
+    if not isinstance(repositories, list):
+        return []
+    refs: list[str] = []
+    for repository in repositories:
+        if isinstance(repository, str):
+            repo_ref = repository.strip()
+        elif isinstance(repository, dict):
+            repo_ref = str(
+                repository.get("repoRef")
+                or repository.get("repo_ref")
+                or repository.get("repoId")
+                or repository.get("id")
+                or ""
+            ).strip()
+        else:
+            repo_ref = ""
+        if repo_ref:
+            refs.append(repo_ref)
+    return refs
+
+
+def project_repository_link_issue(project_id: str, repo_ref: str, repositories: list[str]) -> str | None:
+    if repo_ref in repositories:
+        return None
+    if not repositories:
+        return (
+            f"Project `{project_id}` has no linked repositories in DecisionOps. Project-scoped decisions can still be "
+            f"recorded, but repo-scoped drafts and repo_ref-based resolution require a linked repository. Link "
+            f"`{repo_ref}` to this project to enable repository-scoped decisions for this repo."
+        )
+    linked_repositories = ", ".join(sorted(repositories))
+    return (
+        f"Project `{project_id}` is linked to {linked_repositories}, but not `{repo_ref}`. Project-scoped decisions "
+        "can still be recorded, but repo-scoped drafts for this repository require the project repository mapping to "
+        "include the current repo."
+    )
+
+
 def require_project_binding(client: DopsClient) -> tuple[str, str]:
     if not client.org_id or not client.project_id:
         raise RuntimeError("This command requires a bound repository. Run `dops init` first.")

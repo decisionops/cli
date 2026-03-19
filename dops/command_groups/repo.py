@@ -20,7 +20,18 @@ from ..platforms import load_platforms, resolve_install_path
 from ..resources import find_platforms_dir, find_skill_source_dir, resolve_local_skill_repo
 from ..tls import describe_tls_setup
 from ..ui import PromptChrome, SelectOption, console, flow_chrome, prompt_confirm, prompt_select, prompt_text, render_cleanup_summary, render_doctor_report, render_install_summary, reset_flow_state, with_spinner
-from .shared import auth_display, choose_platforms, detect_repo_ref, is_interactive, load_session_context, normalize_repo_ref, resolve_server_name, resolve_server_url
+from .shared import (
+    auth_display,
+    choose_platforms,
+    detect_repo_ref,
+    is_interactive,
+    load_session_context,
+    normalize_repo_ref,
+    project_repository_link_issue,
+    project_repository_refs,
+    resolve_server_name,
+    resolve_server_url,
+)
 
 _MANUAL_SELECTION = "__manual__"
 _CREATE_ORGANIZATION = "__create_organization__"
@@ -32,29 +43,6 @@ _CANCEL_EXISTING_BINDING = "__cancel_existing_binding__"
 
 def _binding_uses_placeholders(org_id: str, project_id: str, repo_ref: str) -> bool:
     return org_id == PLACEHOLDER_ORG_ID or project_id == PLACEHOLDER_PROJECT_ID or repo_ref == PLACEHOLDER_REPO_REF
-
-
-def _project_repository_refs(payload: dict[str, Any] | None) -> list[str]:
-    repositories = (payload or {}).get("repositories") if isinstance(payload, dict) else None
-    if not isinstance(repositories, list):
-        return []
-    refs: list[str] = []
-    for repository in repositories:
-        if isinstance(repository, str):
-            repo_ref = repository.strip()
-        elif isinstance(repository, dict):
-            repo_ref = str(
-                repository.get("repoRef")
-                or repository.get("repo_ref")
-                or repository.get("repoId")
-                or repository.get("id")
-                or ""
-            ).strip()
-        else:
-            repo_ref = ""
-        if repo_ref:
-            refs.append(repo_ref)
-    return refs
 
 
 def _verify_or_attach_project_repository(
@@ -84,7 +72,7 @@ def _verify_or_attach_project_repository(
 
     client = DopsClient(api_base_url=(api_base_url or auth.apiBaseUrl).rstrip("/"), token=auth.accessToken, org_id=org_id)
     try:
-        repositories = _project_repository_refs(client.load_project_repositories(project_id))
+        repositories = project_repository_refs(client.load_project_repositories(project_id))
     except DecisionOpsApiError as error:
         return ("error", f"Could not load project repositories for `{project_id}`: {error}")
 
@@ -92,15 +80,10 @@ def _verify_or_attach_project_repository(
         return ("ok", f"Verified central repository link for `{repo_ref}` in project `{project_id}`.")
 
     if not attach_missing:
-        if not repositories:
-            return (
-                "error",
-                f"Project `{project_id}` has no linked repositories in DecisionOps. Link `{repo_ref}` to this project and retry.",
-            )
-        linked_repositories = ", ".join(sorted(repositories))
+        issue = project_repository_link_issue(project_id, repo_ref, repositories)
         return (
             "error",
-            f"Project `{project_id}` is linked to {linked_repositories}, but not `{repo_ref}`. Update the project repository mapping in DecisionOps.",
+            issue or f"Project `{project_id}` is not linked to `{repo_ref}` in DecisionOps.",
         )
 
     try:

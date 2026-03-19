@@ -146,6 +146,8 @@ There is no API key or token-based alternative for IDE MCP authentication.
 
 `dops init` should leave a manifest in the repo. When CLI auth is available, it also verifies that the repository is linked to the selected DecisionOps project and creates the project-repository assignment if it is missing.
 
+That central repository link is still useful, but it is no longer required for every decision write. Project-scoped decisions can be recorded with just `org_id` and `project_id`. Linked repositories are still required when you want repo-scoped decisions or repo_ref-based project resolution.
+
 ![dops init](assets/demo-init.gif)
 
 Example manifest written by the CLI:
@@ -166,7 +168,7 @@ mcp_server_url = "https://api.aidecisionops.com/mcp"
 
 ![dops doctor](assets/demo-doctor.gif)
 
-Use it whenever you are unsure whether the CLI, manifest, or editor integration is the thing that is broken.
+Use it whenever you are unsure whether the CLI, manifest, or editor integration is the thing that is broken. If repo-scoped drafting or repo_ref-based gate resolution fails, check the reported project-repository linkage first.
 
 ## Supported platforms
 

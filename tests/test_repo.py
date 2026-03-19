@@ -373,9 +373,15 @@ class RepoCommandTests(unittest.TestCase):
                         with patch("dops.command_groups.repo.load_platforms", return_value={}):
                             with patch(
                                 "dops.command_groups.repo._verify_or_attach_project_repository",
-                                return_value=("error", "Project `proj_123` has no linked repositories in DecisionOps."),
+                                return_value=(
+                                    "error",
+                                    "Project `proj_123` has no linked repositories in DecisionOps. Project-scoped decisions can still be recorded, but repo-scoped drafts and repo_ref-based resolution require a linked repository. Link `acme/backend` to this project to enable repository-scoped decisions for this repo.",
+                                ),
                             ):
                                 with patch("dops.command_groups.repo.render_doctor_report") as render_doctor_report:
                                     run_doctor(flags)
             issues = render_doctor_report.call_args.kwargs["issues"]
-            self.assertIn("Project `proj_123` has no linked repositories in DecisionOps.", issues)
+            self.assertIn(
+                "Project `proj_123` has no linked repositories in DecisionOps. Project-scoped decisions can still be recorded, but repo-scoped drafts and repo_ref-based resolution require a linked repository. Link `acme/backend` to this project to enable repository-scoped decisions for this repo.",
+                issues,
+            )
