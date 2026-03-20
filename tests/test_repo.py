@@ -307,7 +307,8 @@ class RepoCommandTests(unittest.TestCase):
             with patch("dops.command_groups.repo.is_interactive", return_value=False):
                 with self.assertRaises(RuntimeError) as raised:
                     run_init(flags)
-            self.assertIn("Existing manifest.toml is invalid", str(raised.exception))
+            self.assertIn("Repository manifest is invalid", str(raised.exception))
+            self.assertIn("dops init", str(raised.exception))
 
     def test_verify_or_attach_project_repository_attaches_missing_repo(self) -> None:
         with patch("dops.command_groups.repo.read_auth_state", return_value=object()):
@@ -385,3 +386,29 @@ class RepoCommandTests(unittest.TestCase):
                 "Project `proj_123` has no linked repositories in DecisionOps. Project-scoped decisions can still be recorded, but repo-scoped drafts and repo_ref-based resolution require a linked repository. Link `acme/backend` to this project to enable repository-scoped decisions for this repo.",
                 issues,
             )
+
+    def test_run_doctor_reports_invalid_manifest_in_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir)
+            decisionops_dir = repo_path / ".decisionops"
+            decisionops_dir.mkdir(parents=True, exist_ok=True)
+            (decisionops_dir / "manifest.toml").write_text("version = [\n", encoding="utf8")
+            flags = argparse.Namespace(repo_path=str(repo_path))
+            auth = type(
+                "Auth",
+                (),
+                {
+                    "apiBaseUrl": "https://api.example.com",
+                    "user": {"email": "dev@example.com"},
+                    "expiresAt": None,
+                    "method": "token",
+                },
+            )()
+            with patch("dops.command_groups.repo.read_auth_state", return_value=object()):
+                with patch("dops.command_groups.repo.ensure_valid_auth_state", return_value=auth):
+                    with patch("dops.command_groups.repo.find_platforms_dir", return_value=Path(temp_dir)):
+                        with patch("dops.command_groups.repo.load_platforms", return_value={}):
+                            with patch("dops.command_groups.repo.render_doctor_report") as render_doctor_report:
+                                run_doctor(flags)
+            issues = render_doctor_report.call_args.kwargs["issues"]
+            self.assertTrue(any("Repository manifest is invalid" in issue for issue in issues))

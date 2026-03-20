@@ -10,6 +10,16 @@ from .config import expand_home
 from .text_utils import levenshtein_distance
 
 
+class InvalidPlatformDefinitionError(RuntimeError):
+    def __init__(self, file_path: Path, details: str) -> None:
+        self.file_path = file_path
+        self.details = details
+        super().__init__(
+            f"DecisionOps platform definition is invalid: {file_path}: {details}. "
+            "Refresh the skill bundle or provide a valid local skill checkout."
+        )
+
+
 @dataclass(slots=True)
 class PlatformInstallSpec:
     supported: bool = False
@@ -93,7 +103,10 @@ def _optional_str(value: object) -> str | None:
 def load_platforms(platforms_dir: str) -> dict[str, PlatformDefinition]:
     platforms: dict[str, PlatformDefinition] = {}
     for file_path in sorted(Path(platforms_dir).glob("*.toml")):
-        parsed = tomllib.loads(file_path.read_text(encoding="utf8"))
+        try:
+            parsed = tomllib.loads(file_path.read_text(encoding="utf8"))
+        except tomllib.TOMLDecodeError as error:
+            raise InvalidPlatformDefinitionError(file_path, str(error)) from error
         platform_id = str(parsed.get("id", ""))
         if not platform_id:
             raise RuntimeError(f"Platform file missing id: {file_path}")

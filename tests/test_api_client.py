@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from dops.api_client import DecisionOpsApiError, DopsClient
@@ -100,3 +102,19 @@ class ApiClientTests(unittest.TestCase):
             "/v1/orgs",
             {"name": "Acme", "autoGenerateServiceToken": False},
         )
+
+    def test_from_auth_reports_invalid_manifest_with_repair_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            decisionops_dir = Path(temp_dir) / ".decisionops"
+            decisionops_dir.mkdir(parents=True, exist_ok=True)
+            (decisionops_dir / "manifest.toml").write_text("version = [\n", encoding="utf8")
+            with patch("dops.api_client.read_auth_state", return_value=object()):
+                with patch(
+                    "dops.api_client.ensure_valid_auth_state",
+                    return_value=type("Auth", (), {"apiBaseUrl": "https://api.example.com", "accessToken": "dop_token"})(),
+                ):
+                    with self.assertRaises(RuntimeError) as raised:
+                        DopsClient.from_auth(temp_dir)
+        self.assertIn("Repository manifest is invalid", str(raised.exception))
+        self.assertIn(".decisionops/manifest.toml", str(raised.exception))
+        self.assertIn("dops init", str(raised.exception))

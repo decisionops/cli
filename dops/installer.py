@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from .config import (
 )
 from .fileio import atomic_copy_dir, atomic_write_text
 from .git import infer_default_branch, infer_repo_ref
-from .manifest import read_manifest, write_manifest
+from .manifest import InvalidManifestError, read_manifest, write_manifest
 from .platforms import (
     PlatformDefinition,
     context_for_paths,
@@ -280,9 +279,9 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
     if should_write_manifest and repo_path:
         try:
             existing_manifest = read_manifest(repo_path)
-        except tomllib.TOMLDecodeError as error:
+        except InvalidManifestError as error:
             raise RuntimeError(
-                "Existing .decisionops/manifest.toml is invalid. Run `dops init` interactively to repair it, or pass --skip-manifest."
+                f"{error} Or pass --skip-manifest to leave the current file untouched."
             ) from error
         if existing_manifest:
             if not options.get("server_name") and existing_manifest.get("mcp_server_name"):

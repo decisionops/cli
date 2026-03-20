@@ -4,7 +4,6 @@ import argparse
 import platform
 import shutil
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,7 @@ from ..auth import clear_auth_state, ensure_valid_auth_state, read_auth_state, r
 from ..config import PLACEHOLDER_ORG_ID, PLACEHOLDER_PROJECT_ID, PLACEHOLDER_REPO_REF, config_error, config_path
 from ..git import infer_default_branch, resolve_repo_path
 from ..installer import cleanup_platforms, install_platforms
-from ..manifest import read_manifest, write_manifest
+from ..manifest import InvalidManifestError, read_manifest, write_manifest
 from ..platforms import load_platforms, resolve_install_path
 from ..resources import find_platforms_dir, find_skill_source_dir, resolve_local_skill_repo
 from ..tls import describe_tls_setup
@@ -258,8 +257,8 @@ def _load_existing_manifest(repo_path: str) -> tuple[dict[str, Any] | None, str 
         return None, None, False
     try:
         return read_manifest(repo_path), None, True
-    except tomllib.TOMLDecodeError as error:
-        return None, f"Existing manifest.toml is invalid: {error}", True
+    except InvalidManifestError as error:
+        return None, str(error), True
 
 
 def _confirm_rebinding_for_invalid_manifest(repo_path: str, manifest_error: str) -> bool:
@@ -618,7 +617,12 @@ def run_doctor(flags: argparse.Namespace) -> None:
             issues.append(str(error))
     if not auth:
         issues.append("CLI auth not configured")
-    manifest = read_manifest(repo_path) if repo_path else None
+    manifest = None
+    if repo_path:
+        try:
+            manifest = read_manifest(repo_path)
+        except InvalidManifestError as error:
+            issues.append(str(error))
     if not repo_path:
         issues.append("Not inside a git repository")
     elif not manifest:

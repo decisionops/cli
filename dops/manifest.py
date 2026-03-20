@@ -8,6 +8,16 @@ from typing import Any
 from .fileio import atomic_write_text
 
 
+class InvalidManifestError(RuntimeError):
+    def __init__(self, file_path: Path, details: str) -> None:
+        self.file_path = file_path
+        self.details = details
+        super().__init__(
+            f"Repository manifest is invalid: {file_path}: {details}. "
+            "Run `dops init` interactively to repair the binding."
+        )
+
+
 def _quote(value: str) -> str:
     return json.dumps(value)
 
@@ -43,4 +53,7 @@ def read_manifest(repo_path: str) -> dict[str, Any] | None:
     file_path = _decisionops_dir(repo_path) / "manifest.toml"
     if not file_path.exists():
         return None
-    return tomllib.loads(file_path.read_text(encoding="utf8"))
+    try:
+        return tomllib.loads(file_path.read_text(encoding="utf8"))
+    except tomllib.TOMLDecodeError as error:
+        raise InvalidManifestError(file_path, str(error)) from error
