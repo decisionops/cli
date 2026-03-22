@@ -96,6 +96,7 @@ def run_decisions_create(flags: argparse.Namespace) -> None:
 
 def register_decision_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     decisions = subparsers.add_parser("decisions", formatter_class=DopsHelpFormatter, help="Work with decisions", description="Work with decisions")
+    decisions.set_defaults(func=lambda args: decisions.print_help() or 0)
     decisions_subparsers = decisions.add_subparsers(dest="decisions_command")
     add_examples(decisions, ["dops decisions list", "dops decisions get dec_123", "dops decisions search auth onboarding", "dops decisions create"])
 

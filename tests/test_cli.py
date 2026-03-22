@@ -113,6 +113,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid int value", result.stderr)
 
+    def test_bare_platform_shows_subcommand_help(self) -> None:
+        result = run_cli("platform")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("platform", result.stdout)
+
+    def test_bare_auth_shows_subcommand_help(self) -> None:
+        result = run_cli("auth")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("auth", result.stdout)
+
+    def test_bare_decisions_shows_subcommand_help(self) -> None:
+        result = run_cli("decisions")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("decisions", result.stdout)
+
+    def test_bare_config_shows_subcommand_help(self) -> None:
+        result = run_cli("config")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("config", result.stdout)
+
     def test_decisions_list_rejects_non_integer_limit_before_auth(self) -> None:
         result = run_cli("decisions", "list", "--limit", "abc")
         self.assertEqual(result.returncode, 2)

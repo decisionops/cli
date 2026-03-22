@@ -158,6 +158,10 @@ def _download_skill_repo(repo_url: str, ref: str) -> Path:
         extract_root = Path(temp_dir)
         try:
             with zipfile.ZipFile(io.BytesIO(response.body)) as archive:
+                for member in archive.namelist():
+                    resolved = (extract_root / member).resolve()
+                    if not str(resolved).startswith(str(extract_root.resolve())):
+                        raise RuntimeError(f"Zip archive contains path traversal entry: {member}")
                 archive.extractall(extract_root)
         except zipfile.BadZipFile as error:
             raise RuntimeError(f"Downloaded DecisionOps skill archive was invalid: {error}") from error

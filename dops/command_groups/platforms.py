@@ -46,6 +46,7 @@ def run_platform_build(flags: argparse.Namespace) -> None:
 
 def register_platform_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     platform_parser = subparsers.add_parser("platform", formatter_class=DopsHelpFormatter, help="Platform registry operations", description="Platform registry operations")
+    platform_parser.set_defaults(func=lambda args: platform_parser.print_help() or 0)
     platform_subparsers = platform_parser.add_subparsers(dest="platform_command")
     add_examples(platform_parser, ["dops platform list", "dops platform build codex --output-dir build"])
 

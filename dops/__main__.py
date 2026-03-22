@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 def _load_main():
     from .cli import main
 

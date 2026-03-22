@@ -6,7 +6,7 @@ import urllib.request
 import unittest
 from unittest.mock import patch
 
-from dops.http import HttpResponse, HttpStatusError, default_user_agent, urlopen_with_retries
+from dops.http import HttpResponse, HttpStatusError, _retry_after_seconds, default_user_agent, urlopen_with_retries
 
 
 class HttpTests(unittest.TestCase):
@@ -71,3 +71,8 @@ class HttpTests(unittest.TestCase):
                 with self.assertRaises(HttpStatusError) as raised:
                     urlopen_with_retries(request, timeout=1, context=None, max_attempts=0)
         self.assertEqual(raised.exception.status, 500)
+
+    def test_retry_after_seconds_caps_large_values(self) -> None:
+        self.assertEqual(_retry_after_seconds({"retry-after": "999999"}), 60.0)
+        self.assertEqual(_retry_after_seconds({"retry-after": "30"}), 30.0)
+        self.assertEqual(_retry_after_seconds({"retry-after": "0"}), 0.0)

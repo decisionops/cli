@@ -26,6 +26,7 @@ def register_config_commands(subparsers: argparse._SubParsersAction[argparse.Arg
         help="Inspect the active dops configuration",
         description="Inspect the active dops configuration",
     )
+    config.set_defaults(func=lambda args: config.print_help() or 0)
     config_subparsers = config.add_subparsers(dest="config_command")
     add_examples(config, ["dops config show", "dops config path"])
 

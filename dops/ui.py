@@ -70,7 +70,7 @@ def _status_symbol(kind: str) -> str:
         "next": "->",
     }
     symbols = unicode_symbols if _supports_unicode_output() else ascii_symbols
-    return symbols[kind]
+    return symbols.get(kind, kind)
 
 
 def _status_markup(kind: str, style: str) -> str:

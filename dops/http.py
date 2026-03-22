@@ -35,18 +35,22 @@ def default_user_agent() -> str:
     return f"decisionops-cli/{__version__} (+https://github.com/decisionops/cli)"
 
 
+_MAX_RETRY_AFTER_SECONDS = 60.0
+
+
 def _retry_after_seconds(headers: Mapping[str, str]) -> float | None:
     value = headers.get("retry-after")
     if not value:
         return None
     try:
-        return max(float(value), 0.0)
+        seconds = max(float(value), 0.0)
     except ValueError:
         try:
             parsed = email.utils.parsedate_to_datetime(value)
         except (TypeError, ValueError):
             return None
-        return max(parsed.timestamp() - time.time(), 0.0)
+        seconds = max(parsed.timestamp() - time.time(), 0.0)
+    return min(seconds, _MAX_RETRY_AFTER_SECONDS)
 
 
 def _retry_delay(attempt: int, headers: Mapping[str, str] | None = None) -> float:

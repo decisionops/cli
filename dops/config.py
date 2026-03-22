@@ -44,7 +44,7 @@ def _read_config() -> dict[str, Any]:
 
 try:
     _CONFIG = _read_config()
-except tomllib.TOMLDecodeError as error:
+except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
     _CONFIG = {}
     _CONFIG_ERROR = f"Invalid TOML in {config_path()}: {error}"
 

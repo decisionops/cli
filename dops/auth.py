@@ -513,6 +513,9 @@ class _CallbackHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path != "/auth/callback":
+            self.send_error(404, "Not Found")
+            return
         params = {key: values[0] for key, values in urllib.parse.parse_qs(parsed.query).items()}
         html, status_code = _render_oauth_callback_html(params)
         payload = html.encode("utf8")

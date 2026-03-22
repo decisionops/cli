@@ -59,6 +59,14 @@ def _copy_dir(source_dir: str, target_dir: str) -> None:
     atomic_copy_dir(source_dir, target_dir)
 
 
+_SAFE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _validate_toml_key(value: str, label: str) -> None:
+    if not _SAFE_TOML_KEY.match(value):
+        raise RuntimeError(f"Invalid {label}: must contain only alphanumeric characters, hyphens, and underscores.")
+
+
 def _render_mcp_build_content(platform: PlatformDefinition, server_name: str, server_url: str) -> str:
     mcp = platform.mcp
     if mcp is None or not mcp.format:
@@ -71,10 +79,14 @@ def _render_mcp_build_content(platform: PlatformDefinition, server_name: str, se
 
 
 def _upsert_codex_toml(config_path: str, server_name: str, server_url: str) -> None:
+    _validate_toml_key(server_name, "MCP server name")
     section_header = f"[mcp_servers.{server_name}]"
     new_block = [section_header, 'type = "http"', "enabled = true", f'url = "{server_url}"']
     file_path = Path(config_path)
-    lines = file_path.read_text(encoding="utf8").splitlines() if file_path.exists() else []
+    try:
+        lines = file_path.read_text(encoding="utf8").splitlines() if file_path.exists() else []
+    except (UnicodeDecodeError, OSError) as error:
+        raise RuntimeError(f"Cannot read MCP config {config_path}: {error}") from error
     output: list[str] = []
     inserted = False
     index = 0
@@ -104,6 +116,8 @@ def _upsert_json_map(config_path: str, root_key: str, server_name: str, server_u
         raw = file_path.read_text(encoding="utf8")
     except FileNotFoundError:
         raw = ""
+    except (UnicodeDecodeError, OSError) as error:
+        raise RuntimeError(f"Cannot read MCP config {config_path}: {error}") from error
     if not raw.strip():
         data = {}
     else:
@@ -125,7 +139,10 @@ def _remove_codex_toml_server(config_path: str, server_name: str) -> bool:
     if not file_path.exists():
         return False
     section_header = re.compile(rf"^\[mcp_servers\.{re.escape(server_name)}\]\s*$")
-    lines = file_path.read_text(encoding="utf8").splitlines()
+    try:
+        lines = file_path.read_text(encoding="utf8").splitlines()
+    except (UnicodeDecodeError, OSError) as error:
+        raise RuntimeError(f"Cannot read MCP config {config_path}: {error}") from error
     output: list[str] = []
     removed = False
     index = 0
@@ -154,7 +171,10 @@ def _remove_json_map_server(config_path: str, root_key: str, server_name: str) -
     file_path = Path(config_path)
     if not file_path.exists():
         return False
-    raw = file_path.read_text(encoding="utf8").strip()
+    try:
+        raw = file_path.read_text(encoding="utf8").strip()
+    except (UnicodeDecodeError, OSError) as error:
+        raise RuntimeError(f"Cannot read MCP config {config_path}: {error}") from error
     if not raw:
         return False
     try:
@@ -184,8 +204,11 @@ def _remove_file_if_present(file_path: str) -> bool:
 
 def _remove_empty_dir_if_present(dir_path: str) -> None:
     path = Path(dir_path)
-    if path.exists() and path.is_dir() and not any(path.iterdir()):
-        path.rmdir()
+    try:
+        if path.exists() and path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+    except OSError:
+        pass
 
 
 def build_platform(

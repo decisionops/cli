@@ -48,7 +48,7 @@ def _version_from_git() -> str | None:
 
 
 def resolve_version() -> str:
-    return _version_from_build_file() or _version_from_git() or DEFAULT_VERSION or _version_from_metadata()
+    return _version_from_build_file() or _version_from_git() or _version_from_metadata() or DEFAULT_VERSION
 
 
 __version__ = resolve_version()

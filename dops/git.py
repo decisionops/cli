@@ -27,6 +27,12 @@ def infer_repo_ref(repo_path: str) -> str:
 
 def infer_default_branch(repo_path: str) -> str:
     try:
+        ref = git_output(repo_path, "symbolic-ref", "refs/remotes/origin/HEAD")
+        if ref:
+            return ref.removeprefix("refs/remotes/origin/")
+    except RuntimeError:
+        pass
+    try:
         return git_output(repo_path, "branch", "--show-current") or "main"
     except RuntimeError:
         return "main"

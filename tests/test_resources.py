@@ -111,3 +111,25 @@ class ResourceTests(unittest.TestCase):
 
         self.assertEqual(Path(platforms_dir).resolve(), (repo_root / "platforms").resolve())
         self.assertEqual(Path(skill_dir).resolve(), bundle_dir.resolve())
+
+    def test_download_skill_repo_rejects_zip_path_traversal(self) -> None:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("../../etc/evil.txt", "pwned")
+            archive.writestr("skill-main/platforms/codex.toml", 'id = "codex"\ndisplay_name = "Codex"\n')
+            archive.writestr("skill-main/decision-ops/SKILL.md", "# DecisionOps\n")
+        with patch.object(
+            self.resources,
+            "urlopen_with_retries",
+            return_value=HttpResponse(
+                url="https://codeload.github.com/decisionops/skill/zip/refs/heads/main",
+                status=200,
+                headers={},
+                body=buffer.getvalue(),
+            ),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                self.resources._download_skill_repo(
+                    "https://github.com/decisionops/skill.git", "main"
+                )
+            self.assertIn("path traversal", str(raised.exception))

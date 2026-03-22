@@ -151,7 +151,12 @@ def run_auth_status() -> int:
     if not current:
         console.print("Auth: missing")
         return 1
-    auth = ensure_valid_auth_state(current)
+    try:
+        auth = ensure_valid_auth_state(current)
+    except RuntimeError as error:
+        console.print(f"Auth: expired or invalid — {error}")
+        console.print("[dim]Run `dops login --force` to re-authenticate.[/dim]")
+        return 1
     render_auth_status(auth)
     return 0
 
@@ -191,6 +196,7 @@ def register_auth_commands(subparsers: argparse._SubParsersAction[argparse.Argum
         help="Inspect or manage the current DecisionOps auth session",
         description="Inspect or manage the current DecisionOps auth session",
     )
+    auth.set_defaults(func=lambda args: auth.print_help() or 0)
     auth_subparsers = auth.add_subparsers(dest="auth_command")
     add_examples(auth, ["dops auth status"])
     auth_status = auth_subparsers.add_parser(

@@ -7,9 +7,13 @@ from pathlib import Path
 from unittest import mock
 
 from dops.installer import (
+    _remove_codex_toml_server,
+    _remove_empty_dir_if_present,
     _remove_file_if_present,
     _remove_json_map_server,
+    _upsert_codex_toml,
     _upsert_json_map,
+    _validate_toml_key,
     build_platform,
     cleanup_platforms,
     install_platforms,
@@ -183,3 +187,44 @@ class InstallerTests(unittest.TestCase):
                 )
 
         self.assertIn("Could not clear existing build output", str(raised.exception))
+
+    def test_upsert_codex_toml_reports_non_utf8_file(self) -> None:
+        config_path = self.repo_path / "codex.toml"
+        config_path.write_bytes(b"\xff\xfe broken")
+        with self.assertRaises(RuntimeError) as raised:
+            _upsert_codex_toml(str(config_path), "decision-ops", "https://api.example.com/mcp")
+        self.assertIn("Cannot read MCP config", str(raised.exception))
+
+    def test_remove_codex_toml_server_reports_non_utf8_file(self) -> None:
+        config_path = self.repo_path / "codex.toml"
+        config_path.write_bytes(b"\xff\xfe broken")
+        with self.assertRaises(RuntimeError) as raised:
+            _remove_codex_toml_server(str(config_path), "decision-ops")
+        self.assertIn("Cannot read MCP config", str(raised.exception))
+
+    def test_validate_toml_key_rejects_special_characters(self) -> None:
+        with self.assertRaises(RuntimeError):
+            _validate_toml_key("bad]name", "server name")
+        with self.assertRaises(RuntimeError):
+            _validate_toml_key("bad\nname", "server name")
+        _validate_toml_key("good-name_123", "server name")
+
+    def test_upsert_json_map_reports_non_utf8_file(self) -> None:
+        config_path = self.repo_path / ".mcp.json"
+        config_path.write_bytes(b"\xff\xfe broken")
+        with self.assertRaises(RuntimeError) as raised:
+            _upsert_json_map(str(config_path), "mcpServers", "decision-ops", "https://api.example.com/mcp")
+        self.assertIn("Cannot read MCP config", str(raised.exception))
+
+    def test_remove_json_map_server_reports_non_utf8_file(self) -> None:
+        config_path = self.repo_path / ".mcp.json"
+        config_path.write_bytes(b"\xff\xfe broken")
+        with self.assertRaises(RuntimeError) as raised:
+            _remove_json_map_server(str(config_path), "mcpServers", "decision-ops")
+        self.assertIn("Cannot read MCP config", str(raised.exception))
+
+    def test_remove_empty_dir_tolerates_permission_error(self) -> None:
+        dir_path = self.repo_path / "locked"
+        dir_path.mkdir()
+        with mock.patch("dops.installer.Path.rmdir", side_effect=PermissionError("denied")):
+            _remove_empty_dir_if_present(str(dir_path))

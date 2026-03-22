@@ -30,11 +30,11 @@ def atomic_copy_dir(source_dir: str | Path, target_dir: str | Path) -> None:
     source_path = Path(source_dir)
     target_path = Path(target_dir)
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = Path(
+    temp_parent = Path(
         tempfile.mkdtemp(prefix=f".{target_path.name}.", suffix=".tmp", dir=target_path.parent)
     )
+    temp_path = temp_parent / target_path.name
     backup_path = target_path.parent / f".{target_path.name}.backup"
-    shutil.rmtree(temp_path, ignore_errors=True)
     try:
         shutil.copytree(source_path, temp_path)
         if backup_path.exists():
@@ -44,13 +44,11 @@ def atomic_copy_dir(source_dir: str | Path, target_dir: str | Path) -> None:
         os.replace(temp_path, target_path)
         shutil.rmtree(backup_path, ignore_errors=True)
     except Exception:
-        if temp_path.exists():
-            shutil.rmtree(temp_path, ignore_errors=True)
+        shutil.rmtree(temp_parent, ignore_errors=True)
         if backup_path.exists() and not target_path.exists():
             os.replace(backup_path, target_path)
         raise
     finally:
-        if temp_path.exists():
-            shutil.rmtree(temp_path, ignore_errors=True)
+        shutil.rmtree(temp_parent, ignore_errors=True)
         if backup_path.exists() and target_path.exists():
             shutil.rmtree(backup_path, ignore_errors=True)

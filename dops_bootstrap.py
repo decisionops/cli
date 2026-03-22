@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dops.__main__ import run
 
 

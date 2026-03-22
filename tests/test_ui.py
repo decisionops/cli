@@ -30,3 +30,6 @@ class UiTests(unittest.TestCase):
             self.assertEqual(_status_symbol("skip"), "-")
             self.assertEqual(_status_symbol("remove"), "x")
             self.assertEqual(_status_symbol("next"), "->")
+
+    def test_status_symbol_returns_kind_for_unknown_values(self) -> None:
+        self.assertEqual(_status_symbol("unknown_kind"), "unknown_kind")
