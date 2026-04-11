@@ -13,3 +13,8 @@ __pycache__/
 dops/_build_version.py
 dops.spec
 dops-tls-check.spec
+.env
+*.swp
+*.swo
+.pytest_cache/
+*.egg

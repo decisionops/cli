@@ -60,7 +60,7 @@ This re-runs the same hosted installer flow used for first-time installation and
 Requires Python 3.13+.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/decisionops/cli.git
 cd cli
 python3 -m venv .venv
 . .venv/bin/activate
