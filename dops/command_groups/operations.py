@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 from ..api_client import DopsClient
 from ..argparse_utils import DopsHelpFormatter, add_examples
@@ -8,6 +9,13 @@ from ..git import find_repo_root, git_changed_files, infer_repo_ref, resolve_rep
 from ..runtime import emit_diagnostic
 from ..ui import console, prompt_text, with_spinner
 from .shared import require_project_binding
+
+
+def _field(obj: Any, key: str, default: Any = None) -> Any:
+    """Read a field from a Pydantic model or dict."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 
 def _format_confidence(confidence: object) -> str | None:
@@ -50,16 +58,15 @@ def run_gate(flags: argparse.Namespace) -> None:
     root = repo_path or find_repo_root() or None
     changed_paths = git_changed_files(root) if root else []
     result = with_spinner("Running decision gate...", lambda: client.prepare_gate(repo_ref, task_summary, changed_paths or None))
-    console.print(f"Recordable:  {'yes' if result.get('recordable') else 'no'}")
-    confidence = _format_confidence(result.get("confidence"))
+    console.print(f"Recordable:  {'yes' if _field(result, 'recordable') else 'no'}")
+    confidence = _format_confidence(_field(result, "confidence"))
     if confidence is not None:
         console.print(f"Confidence:  {confidence}")
-    if result.get("classification_reason"):
-        console.print(f"Reasoning:   {result['classification_reason']}")
-    elif result.get("reasoning"):
-        console.print(f"Reasoning:   {result['reasoning']}")
-    if result.get("suggested_mode"):
-        console.print(f"Mode:        {result['suggested_mode']}")
+    reason = _field(result, "classification_reason") or _field(result, "reasoning")
+    if reason:
+        console.print(f"Reasoning:   {reason}")
+    if _field(result, "suggested_mode"):
+        console.print(f"Mode:        {_field(result, 'suggested_mode')}")
 
 
 def run_validate(decision_id: str | None, flags: argparse.Namespace) -> None:
@@ -70,17 +77,17 @@ def run_validate(decision_id: str | None, flags: argparse.Namespace) -> None:
     if decision_id:
         payload["decision_id"] = decision_id
     result = with_spinner("Validating decision...", lambda: client.validate_decision(payload))
-    console.print(f"Valid: {'yes' if result.get('valid') else 'no'}")
-    errors = result.get("errors") or []
-    warnings = result.get("warnings") or []
+    console.print(f"Valid: {'yes' if _field(result, 'valid') else 'no'}")
+    errors = _field(result, "errors") or []
+    warnings = _field(result, "warnings") or []
     if errors:
         console.print("Errors:")
         for error in errors:
-            console.print(f"  - {error.get('message') if isinstance(error, dict) else error}")
+            console.print(f"  - {_field(error, 'message', error)}")
     if warnings:
         console.print("Warnings:")
         for warning in warnings:
-            console.print(f"  - {warning.get('message') if isinstance(warning, dict) else warning}")
+            console.print(f"  - {_field(warning, 'message', warning)}")
 
 
 def run_publish(decision_id: str, flags: argparse.Namespace) -> None:
@@ -102,7 +109,7 @@ def run_publish(decision_id: str, flags: argparse.Namespace) -> None:
             {"org_id": org_id, "project_id": project_id, "decision_id": decision_id, "expected_version": expected_version}
         ),
     )
-    console.print(f"Published: {result.get('decision_id', decision_id)} (v{result.get('version', expected_version)})")
+    console.print(f"Published: {_field(result, 'decision_id', decision_id)} (v{_field(result, 'version', expected_version)})")
 
 
 def run_status(flags: argparse.Namespace) -> None:

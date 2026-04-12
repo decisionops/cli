@@ -8,11 +8,30 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
+
 from .auth import ensure_valid_auth_state, read_auth_state
 from .config import DEFAULT_API_BASE_URL
+from .generated.api_models import (
+    DecisionOpsCreateDraftOutput,
+    DecisionOpsDecisionRecord,
+    DecisionOpsPrepareGateOutput,
+    DecisionOpsPublishOutput,
+    DecisionOpsValidateOutput,
+)
 from .http import HttpStatusError, default_user_agent, urlopen_with_retries
 from .manifest import read_manifest
 from .tls import create_ssl_context
+
+
+def _parse_model(model_cls: type, data: Any) -> Any:
+    """Parse API response into a Pydantic model, falling back to raw dict on validation errors."""
+    if not isinstance(data, dict):
+        return data
+    try:
+        return model_cls.model_validate(data)
+    except ValidationError:
+        return data
 
 
 class DecisionOpsApiError(RuntimeError):
@@ -174,26 +193,31 @@ class DopsClient:
     def create_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.request("POST", "/v1/decisions", payload)
 
-    def prepare_gate(self, repo_ref: str, task_summary: str, changed_paths: list[str] | None = None, branch: str | None = None) -> dict[str, Any]:
-        return self.request(
+    def prepare_gate(self, repo_ref: str, task_summary: str, changed_paths: list[str] | None = None, branch: str | None = None) -> DecisionOpsPrepareGateOutput | dict[str, Any]:
+        result = self.request(
             "POST",
             "/v1/decision-ops/gate",
             {"repo_ref": repo_ref, "task_summary": task_summary, "changed_paths": changed_paths, "branch": branch},
         )
+        return _parse_model(DecisionOpsPrepareGateOutput, result)
 
-    def create_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.request("POST", "/v1/decision-ops/draft", payload)
+    def create_draft(self, payload: dict[str, Any]) -> DecisionOpsCreateDraftOutput | dict[str, Any]:
+        result = self.request("POST", "/v1/decision-ops/draft", payload)
+        return _parse_model(DecisionOpsCreateDraftOutput, result)
 
-    def validate_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.request("POST", "/v1/decision-ops/validate", payload)
+    def validate_decision(self, payload: dict[str, Any]) -> DecisionOpsValidateOutput | dict[str, Any]:
+        result = self.request("POST", "/v1/decision-ops/validate", payload)
+        return _parse_model(DecisionOpsValidateOutput, result)
 
-    def publish_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.request("POST", "/v1/decision-ops/publish", payload)
+    def publish_decision(self, payload: dict[str, Any]) -> DecisionOpsPublishOutput | dict[str, Any]:
+        result = self.request("POST", "/v1/decision-ops/publish", payload)
+        return _parse_model(DecisionOpsPublishOutput, result)
 
-    def get_decision_ops(self, decision_id: str, project_id: str | None = None) -> dict[str, Any]:
+    def get_decision_ops(self, decision_id: str, project_id: str | None = None) -> DecisionOpsDecisionRecord | dict[str, Any]:
         params = f"?project_id={urllib.parse.quote(project_id)}" if project_id else ""
         payload = self.request("GET", f"/v1/decision-ops/decisions/{urllib.parse.quote(decision_id)}{params}")
-        return payload if isinstance(payload, dict) else {}
+        result = payload if isinstance(payload, dict) else {}
+        return _parse_model(DecisionOpsDecisionRecord, result)
 
     def get_monitoring_snapshot(self) -> dict[str, Any]:
         payload = self.request("GET", "/v1/monitoring/snapshot")

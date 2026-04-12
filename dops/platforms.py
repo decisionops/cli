@@ -3,10 +3,16 @@ from __future__ import annotations
 import os
 import re
 import tomllib
-from dataclasses import dataclass
 from pathlib import Path
 
 from .config import expand_home
+from .generated.platform_models import (
+    PlatformAuthSpec,
+    PlatformInstallSpec,
+)
+from .generated.platform_models import (
+    PlatformDefinition as _BasePlatformDefinition,
+)
 from .text_utils import levenshtein_distance
 
 
@@ -20,35 +26,10 @@ class InvalidPlatformDefinitionError(RuntimeError):
         )
 
 
-@dataclass(slots=True)
-class PlatformInstallSpec:
-    supported: bool = False
-    build_path: str | None = None
-    install_path_env: str | None = None
-    install_path_default: str | None = None
-    install_root_env: str | None = None
-    install_root_default: str | None = None
-    install_path_suffix: str | None = None
-    scope: str | None = None
-    format: str | None = None
-    root_key: str | None = None
+class PlatformDefinition(_BasePlatformDefinition):
+    """Extends the generated PlatformDefinition with runtime-only file_path field."""
 
-
-@dataclass(slots=True)
-class PlatformAuthSpec:
-    mode: str | None = None
-    instructions: list[str] | None = None
-
-
-@dataclass(slots=True)
-class PlatformDefinition:
-    id: str
-    display_name: str
-    skill: PlatformInstallSpec | None
-    mcp: PlatformInstallSpec | None
-    manifest: PlatformInstallSpec | None
-    auth: PlatformAuthSpec | None
-    file_path: str
+    file_path: str = ""
 
 
 def format_template(template: str, context: dict[str, str]) -> str:
@@ -72,32 +53,13 @@ def context_for_paths(skill_name: str, repo_path: str | None) -> dict[str, str]:
 def _install_spec(data: dict[str, object] | None) -> PlatformInstallSpec | None:
     if data is None:
         return None
-    return PlatformInstallSpec(
-        supported=bool(data.get("supported", False)),
-        build_path=_optional_str(data.get("build_path")),
-        install_path_env=_optional_str(data.get("install_path_env")),
-        install_path_default=_optional_str(data.get("install_path_default")),
-        install_root_env=_optional_str(data.get("install_root_env")),
-        install_root_default=_optional_str(data.get("install_root_default")),
-        install_path_suffix=_optional_str(data.get("install_path_suffix")),
-        scope=_optional_str(data.get("scope")),
-        format=_optional_str(data.get("format")),
-        root_key=_optional_str(data.get("root_key")),
-    )
+    return PlatformInstallSpec.model_validate(data)
 
 
 def _auth_spec(data: dict[str, object] | None) -> PlatformAuthSpec | None:
     if data is None:
         return None
-    instructions = data.get("instructions")
-    return PlatformAuthSpec(
-        mode=_optional_str(data.get("mode")),
-        instructions=[str(item) for item in instructions] if isinstance(instructions, list) else None,
-    )
-
-
-def _optional_str(value: object) -> str | None:
-    return str(value) if value is not None else None
+    return PlatformAuthSpec.model_validate(data)
 
 
 def load_platforms(platforms_dir: str) -> dict[str, PlatformDefinition]:
