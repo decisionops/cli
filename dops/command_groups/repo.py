@@ -726,6 +726,7 @@ def _resolve_mcp_status(
         root_key=platform_def.mcp.root_key,
         server_name=server_name,
         expected_url=expected_url,
+        platform_id=platform_def.id,
     )
     for issue in report.issues:
         # Prefix with the platform so users know which IDE to go fix.

@@ -68,6 +68,18 @@ class McpEntryReport:
         return "ok"
 
 
+def _mcp_only_install_command(platform_id: str | None) -> str:
+    """Tell users exactly how to fix a missing/wrong MCP entry without
+    re-running skill and manifest work that is probably already correct.
+
+    The existing `--skip-skill --skip-manifest` flags on `dops install`
+    already do this; doctor just needs to point at the right incantation
+    with the platform name baked in.
+    """
+    target = platform_id or "<platform>"
+    return f"dops install {target} --skip-skill --skip-manifest"
+
+
 def inspect_mcp_entry(
     *,
     config_path: str,
@@ -75,6 +87,7 @@ def inspect_mcp_entry(
     root_key: str | None,
     server_name: str,
     expected_url: str,
+    platform_id: str | None = None,
 ) -> McpEntryReport:
     report = McpEntryReport(
         config_path=config_path,
@@ -83,9 +96,10 @@ def inspect_mcp_entry(
         expected_url=expected_url,
         config_exists=Path(config_path).exists(),
     )
+    fix_hint = _mcp_only_install_command(platform_id)
     if not report.config_exists:
         report.issues.append(
-            f"MCP config not present at {config_path}. Run `dops install <platform>`."
+            f"MCP config not present at {config_path}. Run `{fix_hint}`."
         )
         return report
     try:
@@ -107,11 +121,15 @@ def inspect_mcp_entry(
         if not report.url_matches:
             report.issues.append(
                 f"MCP entry `{server_name}` in {config_path} points to {report.entry_url}, "
-                f"expected {expected_url}. Run `dops install <platform>` to repair."
+                f"expected {expected_url}. Run `{fix_hint}` to repair."
             )
         if report.entry_enabled is False:
+            # Reinstall is still the quickest remediation — the new writer
+            # replaces the block with a minimal `url = "..."` entry, which
+            # defaults to enabled in every supported IDE.
             report.issues.append(
-                f"MCP entry `{server_name}` in {config_path} is disabled. Set enabled = true."
+                f"MCP entry `{server_name}` in {config_path} is disabled. Run `{fix_hint}` "
+                "to rewrite the entry, or flip `enabled = true` by hand."
             )
     else:
         suffix = ""
@@ -121,7 +139,7 @@ def inspect_mcp_entry(
                 f"{expected_url}; consider removing it to avoid confusion."
             )
         report.issues.append(
-            f"MCP entry `{server_name}` missing from {config_path}. Run `dops install <platform>`.{suffix}"
+            f"MCP entry `{server_name}` missing from {config_path}. Run `{fix_hint}`.{suffix}"
         )
     return report
 

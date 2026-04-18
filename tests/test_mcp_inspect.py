@@ -65,12 +65,29 @@ class TestInspectMcpEntryCodexToml:
             root_key=None,
             server_name=SERVER_NAME,
             expected_url=EXPECTED_URL,
+            platform_id="codex",
         )
         assert report.entry_found
         assert not report.url_matches
         assert not report.healthy
         assert any("old.example.com" in issue for issue in report.issues)
         assert "wrong url" in report.short_status()
+        assert any("dops install codex --skip-skill --skip-manifest" in issue for issue in report.issues)
+
+    def test_missing_entry_recommends_mcp_only_install(self, tmp_path: Path) -> None:
+        """Doctor should tell users exactly how to fix just the MCP entry
+        without re-running skill and manifest work that is already correct."""
+        path = _write(tmp_path, "config.toml", '[mcp_servers.other]\nurl = "https://x.example.com"\n')
+        report = inspect_mcp_entry(
+            config_path=path,
+            fmt="codex_toml",
+            root_key=None,
+            server_name=SERVER_NAME,
+            expected_url=EXPECTED_URL,
+            platform_id="codex",
+        )
+        assert not report.entry_found
+        assert any("dops install codex --skip-skill --skip-manifest" in issue for issue in report.issues)
 
     def test_detects_disabled_entry(self, tmp_path: Path) -> None:
         path = _write(
