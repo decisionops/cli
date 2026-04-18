@@ -115,6 +115,12 @@ class ApiClientTests(unittest.TestCase):
                 ):
                     with self.assertRaises(RuntimeError) as raised:
                         DopsClient.from_auth(temp_dir)
-        self.assertIn("Repository manifest is invalid", str(raised.exception))
-        self.assertIn(".decisionops/manifest.toml", str(raised.exception))
-        self.assertIn("dops init", str(raised.exception))
+        message = str(raised.exception)
+        self.assertIn("Repository manifest is invalid", message)
+        # Use os.sep-tolerant check so the assertion passes on Windows where
+        # paths come back as .decisionops\manifest.toml.
+        self.assertTrue(
+            ".decisionops/manifest.toml" in message or ".decisionops\\manifest.toml" in message,
+            f"expected manifest path in message: {message!r}",
+        )
+        self.assertIn("dops init", message)
