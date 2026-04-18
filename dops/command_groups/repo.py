@@ -20,7 +20,14 @@ from ..config import (
     config_error,
     config_path,
 )
-from ..mcp_inspect import McpEntryReport, McpProbeResult, inspect_mcp_entry, probe_mcp_endpoint
+from ..mcp_inspect import (
+    ApiAuthProbeResult,
+    McpEntryReport,
+    McpReachabilityResult,
+    inspect_mcp_entry,
+    probe_api_auth,
+    probe_mcp_reachability,
+)
 from ..git import infer_default_branch, resolve_repo_path
 from ..installer import cleanup_platforms, install_platforms
 from ..manifest import InvalidManifestError, read_manifest, write_manifest
@@ -680,13 +687,19 @@ def run_doctor(flags: argparse.Namespace) -> None:
         issues.append(_doctor_platform_issue(error))
         platform_statuses = []
 
-    mcp_probe: McpProbeResult | None = None
+    api_auth_probe: ApiAuthProbeResult | None = None
+    mcp_reach_probe: McpReachabilityResult | None = None
     if auth:
-        mcp_probe = probe_mcp_endpoint(api_base_url=auth.apiBaseUrl, token=auth.accessToken)
-        if not mcp_probe.reachable:
-            issues.append(
-                f"DecisionOps MCP endpoint probe failed: {mcp_probe.short_status()}."
-            )
+        # Two independent signals. The CLI token is scoped to the REST API
+        # audience and literally cannot authenticate against /mcp (which
+        # uses a separate OAuth audience for IDE MCP clients), so we probe
+        # each endpoint with the right expectation instead of one-size-fits-all.
+        api_auth_probe = probe_api_auth(api_base_url=auth.apiBaseUrl, token=auth.accessToken)
+        if not api_auth_probe.reachable:
+            issues.append(f"DecisionOps API auth probe failed: {api_auth_probe.short_status()}.")
+    mcp_reach_probe = probe_mcp_reachability(mcp_url=str(expected_server_url))
+    if not mcp_reach_probe.reachable:
+        issues.append(f"DecisionOps MCP server not reachable: {mcp_reach_probe.short_status()}.")
 
     render_doctor_report(
         auth=auth,
@@ -698,7 +711,8 @@ def run_doctor(flags: argparse.Namespace) -> None:
         system_info=system_info,
         cli_config_path=str(config_path()),
         cli_config_error=config_error(),
-        mcp_probe=mcp_probe,
+        api_auth_probe=api_auth_probe,
+        mcp_reach_probe=mcp_reach_probe,
         mcp_expected_url=str(expected_server_url),
     )
 

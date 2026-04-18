@@ -321,7 +321,8 @@ def render_doctor_report(
     system_info: dict[str, str] | None = None,
     cli_config_path: str | None = None,
     cli_config_error: str | None = None,
-    mcp_probe=None,
+    api_auth_probe=None,
+    mcp_reach_probe=None,
     mcp_expected_url: str | None = None,
 ) -> None:
     _section_title("DecisionOps Doctor")
@@ -367,10 +368,13 @@ def render_doctor_report(
             platform.get("mcpDetail", "") or "",
         )
     console.print(table)
-    if mcp_probe is not None:
-        marker = _status_markup("ok", "green") if mcp_probe.reachable else _status_markup("remove", "red")
+    if api_auth_probe is not None:
+        marker = _status_markup("ok", "green") if api_auth_probe.reachable else _status_markup("remove", "red")
+        console.print(f"{marker} DecisionOps API auth (/v1/auth/me): {api_auth_probe.short_status()}")
+    if mcp_reach_probe is not None:
+        marker = _status_markup("ok", "green") if mcp_reach_probe.reachable else _status_markup("remove", "red")
         url_hint = f" [dim]({mcp_expected_url})[/dim]" if mcp_expected_url else ""
-        console.print(f"{marker} DecisionOps MCP endpoint{url_hint}: {mcp_probe.short_status()}")
+        console.print(f"{marker} DecisionOps MCP server{url_hint}: {mcp_reach_probe.short_status()}")
     if issues:
         console.print(f"[yellow]{len(issues)} issue{'s' if len(issues) != 1 else ''} found:[/yellow]")
         for issue in issues:

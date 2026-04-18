@@ -16,7 +16,6 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from .http import HttpStatusError, default_user_agent, urlopen_with_retries
 from .tls import create_ssl_context
@@ -211,9 +210,15 @@ def _inspect_json_map(raw: str, root_key: str, report: McpEntryReport) -> None:
 
 
 @dataclass
-class McpProbeResult:
+class ApiAuthProbeResult:
+    """Does the CLI's stored token actually authenticate with the API?
+
+    Hits a cheap REST endpoint the CLI token is *supposed* to work with
+    (`/v1/auth/me`). Separate from the MCP endpoint, which uses a
+    different audience — see `McpReachabilityResult` below.
+    """
+
     status: int
-    tool_count: int
     error: str | None = None
 
     @property
@@ -221,78 +226,94 @@ class McpProbeResult:
         return self.status == 200 and self.error is None
 
     def short_status(self) -> str:
-        if self.error is None and self.status == 200:
-            return f"reachable ({self.tool_count} tools)"
+        if self.reachable:
+            return "ok"
         if self.status == 401:
-            return "unauthorized — run `dops login`"
+            return "unauthorized — run `dops login --force`"
         if self.status == 403:
-            return "forbidden — token missing required scope"
+            return "forbidden — token missing required scope; run `dops login --force`"
         if self.status == 0:
             return f"unreachable — {self.error}"
         return f"error {self.status}: {self.error}"
 
 
-def probe_mcp_endpoint(*, api_base_url: str, token: str, path: str = "/mcp", timeout: int = 10) -> McpProbeResult:
+@dataclass
+class McpReachabilityResult:
+    """Is the MCP server process up and responding?
+
+    CLI tokens cannot authenticate against `/mcp` (different OAuth
+    audience — IDE MCP clients obtain their own tokens via the
+    protected-resource flow), so we probe without auth and treat a
+    401 "Missing bearer token" response as proof the server is alive.
+    """
+
+    status: int
+    error: str | None = None
+
+    @property
+    def reachable(self) -> bool:
+        # A 401 with the "missing bearer token" shape is the expected
+        # response for an unauthenticated probe — it means the server
+        # handler is alive and enforcing auth.
+        return self.status in (200, 401) and self.error is None
+
+    def short_status(self) -> str:
+        if self.reachable:
+            return "server reachable (IDE MCP client handles its own auth)"
+        if self.status == 0:
+            return f"unreachable — {self.error}"
+        return f"unexpected status {self.status}: {self.error}"
+
+
+def probe_api_auth(*, api_base_url: str, token: str, path: str = "/v1/auth/me", timeout: int = 10) -> ApiAuthProbeResult:
     url = f"{api_base_url.rstrip('/')}{path}"
     headers = {
-        "content-type": "application/json",
-        "accept": "application/json, text/event-stream",
+        "accept": "application/json",
         "authorization": f"Bearer {token}",
         "user-agent": default_user_agent(),
     }
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode("utf8")
-    request = urllib.request.Request(url, data=body, method="POST", headers=headers)
+    request = urllib.request.Request(url, method="GET", headers=headers)
     try:
         response = urlopen_with_retries(request, timeout=timeout, context=create_ssl_context())
     except HttpStatusError as error:
-        raw = error.body.decode("utf8") if error.body else ""
-        try:
-            payload = json.loads(raw)
-            message = str(payload.get("error") or payload.get("message") or error.reason)
-        except json.JSONDecodeError:
-            message = raw or str(error.reason)
-        return McpProbeResult(status=error.status, tool_count=0, error=message)
+        message = _read_error_message(error)
+        return ApiAuthProbeResult(status=error.status, error=message)
     except socket.timeout:
-        return McpProbeResult(status=0, tool_count=0, error=f"timeout after {timeout}s")
+        return ApiAuthProbeResult(status=0, error=f"timeout after {timeout}s")
     except urllib.error.URLError as error:
-        return McpProbeResult(status=0, tool_count=0, error=str(error.reason))
-
-    raw = response.body.decode("utf8") if response.body else ""
-    return McpProbeResult(status=response.status, tool_count=_count_tools_in_response(raw), error=None)
+        return ApiAuthProbeResult(status=0, error=str(error.reason))
+    return ApiAuthProbeResult(status=response.status, error=None)
 
 
-def _count_tools_in_response(raw: str) -> int:
-    """MCP streams can respond as plain JSON or SSE data: lines. Parse either."""
-    if not raw:
-        return 0
+def probe_mcp_reachability(*, mcp_url: str, timeout: int = 10) -> McpReachabilityResult:
+    headers = {
+        "content-type": "application/json",
+        "accept": "application/json, text/event-stream",
+        "user-agent": default_user_agent(),
+    }
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode("utf8")
+    request = urllib.request.Request(mcp_url, data=body, method="POST", headers=headers)
     try:
-        parsed = json.loads(raw)
-        return _tool_count_from_rpc(parsed)
+        response = urlopen_with_retries(request, timeout=timeout, context=create_ssl_context())
+    except HttpStatusError as error:
+        # 401 with "Missing bearer token" is the happy path here — it
+        # means the server is up and the auth middleware is running.
+        if error.status == 401:
+            return McpReachabilityResult(status=401, error=None)
+        return McpReachabilityResult(status=error.status, error=_read_error_message(error))
+    except socket.timeout:
+        return McpReachabilityResult(status=0, error=f"timeout after {timeout}s")
+    except urllib.error.URLError as error:
+        return McpReachabilityResult(status=0, error=str(error.reason))
+    return McpReachabilityResult(status=response.status, error=None)
+
+
+def _read_error_message(error: HttpStatusError) -> str:
+    raw = error.body.decode("utf8") if error.body else ""
+    try:
+        payload = json.loads(raw)
+        return str(payload.get("error") or payload.get("message") or error.reason)
     except json.JSONDecodeError:
-        pass
-    for line in raw.splitlines():
-        if not line.startswith("data:"):
-            continue
-        payload = line[5:].strip()
-        if not payload:
-            continue
-        try:
-            parsed = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
-        count = _tool_count_from_rpc(parsed)
-        if count:
-            return count
-    return 0
+        return raw or str(error.reason)
 
 
-def _tool_count_from_rpc(parsed: Any) -> int:
-    if not isinstance(parsed, dict):
-        return 0
-    result = parsed.get("result")
-    if not isinstance(result, dict):
-        return 0
-    tools = result.get("tools")
-    if not isinstance(tools, list):
-        return 0
-    return len(tools)

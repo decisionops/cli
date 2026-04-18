@@ -8,10 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from dops.mcp_inspect import (
-    McpProbeResult,
-    _count_tools_in_response,
+    ApiAuthProbeResult,
+    McpReachabilityResult,
     inspect_mcp_entry,
-    probe_mcp_endpoint,
+    probe_api_auth,
+    probe_mcp_reachability,
 )
 
 EXPECTED_URL = "https://api.aidecisionops.com/mcp"
@@ -184,23 +185,47 @@ class InspectMcpEntryJsonMapTests(_TempFileMixin):
         self.assertTrue(any("empty" in issue.lower() for issue in report.issues))
 
 
-class CountToolsInResponseTests(unittest.TestCase):
-    def test_parses_json_rpc_result(self) -> None:
-        body = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "a"}, {"name": "b"}]}})
-        self.assertEqual(_count_tools_in_response(body), 2)
+class ProbeApiAuthTests(unittest.TestCase):
+    def test_happy_path(self) -> None:
+        class FakeResponse:
+            status = 200
+            body = b'{"userId":"u"}'
 
-    def test_parses_sse_data_line(self) -> None:
-        payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "a"}]}})
-        body = f"event: message\ndata: {payload}\n\n"
-        self.assertEqual(_count_tools_in_response(body), 1)
+        with patch("dops.mcp_inspect.urlopen_with_retries", return_value=FakeResponse()):
+            result = probe_api_auth(api_base_url="https://api.example.com", token="tok")
+        self.assertIsInstance(result, ApiAuthProbeResult)
+        self.assertTrue(result.reachable)
+        self.assertEqual(result.short_status(), "ok")
 
-    def test_empty_or_malformed_returns_zero(self) -> None:
-        self.assertEqual(_count_tools_in_response(""), 0)
-        self.assertEqual(_count_tools_in_response("not json"), 0)
+    def test_401_recommends_force_login(self) -> None:
+        from dops.http import HttpStatusError
+
+        with patch("dops.mcp_inspect.urlopen_with_retries") as mock:
+            mock.side_effect = HttpStatusError(
+                status=401,
+                url="https://api.example.com/v1/auth/me",
+                headers={},
+                body=b'{"error":"Invalid access token"}',
+                reason="Unauthorized",
+            )
+            result = probe_api_auth(api_base_url="https://api.example.com", token="tok")
+        self.assertFalse(result.reachable)
+        self.assertIn("dops login --force", result.short_status())
+
+    def test_url_error_reports_unreachable(self) -> None:
+        with patch("dops.mcp_inspect.urlopen_with_retries", side_effect=urllib.error.URLError("DNS failure")):
+            result = probe_api_auth(api_base_url="https://api.example.com", token="tok")
+        self.assertEqual(result.status, 0)
+        self.assertFalse(result.reachable)
 
 
-class ProbeMcpEndpointTests(unittest.TestCase):
-    def test_http_401_surfaces_as_auth_error(self) -> None:
+class ProbeMcpReachabilityTests(unittest.TestCase):
+    def test_401_missing_bearer_is_considered_reachable(self) -> None:
+        """Unauthenticated probe MUST see 401 to prove the server is up.
+
+        The IDE MCP client handles its own OAuth against this endpoint,
+        so the CLI can only verify the server is alive — not that our
+        CLI token works there (it can't, different audience)."""
         from dops.http import HttpStatusError
 
         with patch("dops.mcp_inspect.urlopen_with_retries") as mock:
@@ -208,36 +233,34 @@ class ProbeMcpEndpointTests(unittest.TestCase):
                 status=401,
                 url="https://api.example.com/mcp",
                 headers={},
-                body=b'{"error":"Invalid access token"}',
+                body=b'{"error":"Missing bearer token..."}',
                 reason="Unauthorized",
             )
-            result = probe_mcp_endpoint(api_base_url="https://api.example.com", token="tok")
-        self.assertIsInstance(result, McpProbeResult)
-        self.assertEqual(result.status, 401)
-        self.assertIn("unauthorized", result.short_status().lower())
-        self.assertFalse(result.reachable)
-
-    def test_happy_path_counts_tools(self) -> None:
-        body = json.dumps(
-            {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "do-prepare-decision-gate"}]}}
-        ).encode("utf8")
-
-        class FakeResponse:
-            def __init__(self) -> None:
-                self.status = 200
-                self.body = body
-
-        with patch("dops.mcp_inspect.urlopen_with_retries", return_value=FakeResponse()):
-            result = probe_mcp_endpoint(api_base_url="https://api.example.com", token="tok")
+            result = probe_mcp_reachability(mcp_url="https://api.example.com/mcp")
+        self.assertIsInstance(result, McpReachabilityResult)
         self.assertTrue(result.reachable)
-        self.assertEqual(result.tool_count, 1)
+        self.assertIn("IDE MCP client", result.short_status())
 
-    def test_url_error_reports_unreachable(self) -> None:
+    def test_network_error_is_unreachable(self) -> None:
         with patch("dops.mcp_inspect.urlopen_with_retries", side_effect=urllib.error.URLError("DNS failure")):
-            result = probe_mcp_endpoint(api_base_url="https://api.example.com", token="tok")
+            result = probe_mcp_reachability(mcp_url="https://api.example.com/mcp")
         self.assertEqual(result.status, 0)
         self.assertFalse(result.reachable)
-        self.assertIn("dns failure", (result.error or "").lower())
+
+    def test_5xx_is_unreachable(self) -> None:
+        from dops.http import HttpStatusError
+
+        with patch("dops.mcp_inspect.urlopen_with_retries") as mock:
+            mock.side_effect = HttpStatusError(
+                status=503,
+                url="https://api.example.com/mcp",
+                headers={},
+                body=b'{"error":"upstream down"}',
+                reason="Service Unavailable",
+            )
+            result = probe_mcp_reachability(mcp_url="https://api.example.com/mcp")
+        self.assertFalse(result.reachable)
+        self.assertEqual(result.status, 503)
 
 
 if __name__ == "__main__":
