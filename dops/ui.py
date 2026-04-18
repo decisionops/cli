@@ -299,6 +299,17 @@ def render_cleanup_summary(result) -> None:
         console.print("[yellow]Restart your IDE to stop using the removed MCP server.[/yellow]")
 
 
+def _colorize_mcp_status(status: str) -> str:
+    lowered = status.lower()
+    if lowered == "ok":
+        return "[green]ok[/green]"
+    if lowered == "n/a":
+        return "[dim]n/a[/dim]"
+    if lowered.startswith("wrong url") or lowered in {"disabled", "parse error"}:
+        return f"[red]{status}[/red]"
+    return f"[yellow]{status}[/yellow]"
+
+
 def render_doctor_report(
     *,
     auth,
@@ -310,6 +321,8 @@ def render_doctor_report(
     system_info: dict[str, str] | None = None,
     cli_config_path: str | None = None,
     cli_config_error: str | None = None,
+    mcp_probe=None,
+    mcp_expected_url: str | None = None,
 ) -> None:
     _section_title("DecisionOps Doctor")
     if system_info:
@@ -344,10 +357,20 @@ def render_doctor_report(
     table = Table(title="Platforms", box=box.SIMPLE)
     table.add_column("Platform")
     table.add_column("Skill")
-    table.add_column("MCP")
+    table.add_column("MCP entry")
+    table.add_column("Config path")
     for platform in platforms:
-        table.add_row(platform["displayName"], platform["skillStatus"], platform["mcpStatus"])
+        table.add_row(
+            platform["displayName"],
+            platform["skillStatus"],
+            _colorize_mcp_status(platform.get("mcpStatus", "n/a")),
+            platform.get("mcpDetail", "") or "",
+        )
     console.print(table)
+    if mcp_probe is not None:
+        marker = _status_markup("ok", "green") if mcp_probe.reachable else _status_markup("remove", "red")
+        url_hint = f" [dim]({mcp_expected_url})[/dim]" if mcp_expected_url else ""
+        console.print(f"{marker} DecisionOps MCP endpoint{url_hint}: {mcp_probe.short_status()}")
     if issues:
         console.print(f"[yellow]{len(issues)} issue{'s' if len(issues) != 1 else ''} found:[/yellow]")
         for issue in issues:

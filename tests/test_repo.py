@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from dops.command_groups.repo import _CREATE_PROJECT, _KEEP_EXISTING_BINDING, _MANUAL_SELECTION, _doctor_platform_issue, _existing_binding_access_summary, _organization_options, _pick_option, _project_options, _resolve_binding_from_workspace_context, _verify_or_attach_project_repository, run_doctor, run_init
+from dops.mcp_inspect import McpProbeResult
 from dops.ui import SelectOption
 
 
@@ -363,6 +364,7 @@ class RepoCommandTests(unittest.TestCase):
                 (),
                 {
                     "apiBaseUrl": "https://api.example.com",
+                    "accessToken": "dop_token",
                     "user": {"email": "dev@example.com"},
                     "expiresAt": None,
                     "method": "token",
@@ -379,8 +381,12 @@ class RepoCommandTests(unittest.TestCase):
                                     "Project `proj_123` has no linked repositories in DecisionOps. Project-scoped decisions can still be recorded, but repo-scoped drafts and repo_ref-based resolution require a linked repository. Link `acme/backend` to this project to enable repository-scoped decisions for this repo.",
                                 ),
                             ):
-                                with patch("dops.command_groups.repo.render_doctor_report") as render_doctor_report:
-                                    run_doctor(flags)
+                                with patch(
+                                    "dops.command_groups.repo.probe_mcp_endpoint",
+                                    return_value=McpProbeResult(status=200, tool_count=7),
+                                ):
+                                    with patch("dops.command_groups.repo.render_doctor_report") as render_doctor_report:
+                                        run_doctor(flags)
             issues = render_doctor_report.call_args.kwargs["issues"]
             self.assertIn(
                 "Project `proj_123` has no linked repositories in DecisionOps. Project-scoped decisions can still be recorded, but repo-scoped drafts and repo_ref-based resolution require a linked repository. Link `acme/backend` to this project to enable repository-scoped decisions for this repo.",
@@ -399,6 +405,7 @@ class RepoCommandTests(unittest.TestCase):
                 (),
                 {
                     "apiBaseUrl": "https://api.example.com",
+                    "accessToken": "dop_token",
                     "user": {"email": "dev@example.com"},
                     "expiresAt": None,
                     "method": "token",

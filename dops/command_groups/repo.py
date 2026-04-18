@@ -11,7 +11,16 @@ from .. import __version__
 from ..api_client import DecisionOpsApiError, DopsClient
 from ..argparse_utils import DopsHelpFormatter, add_examples, add_notes
 from ..auth import clear_auth_state, ensure_valid_auth_state, read_auth_state, revoke_auth_state
-from ..config import PLACEHOLDER_ORG_ID, PLACEHOLDER_PROJECT_ID, PLACEHOLDER_REPO_REF, config_error, config_path
+from ..config import (
+    DEFAULT_MCP_SERVER_NAME,
+    DEFAULT_MCP_SERVER_URL,
+    PLACEHOLDER_ORG_ID,
+    PLACEHOLDER_PROJECT_ID,
+    PLACEHOLDER_REPO_REF,
+    config_error,
+    config_path,
+)
+from ..mcp_inspect import McpEntryReport, McpProbeResult, inspect_mcp_entry, probe_mcp_endpoint
 from ..git import infer_default_branch, resolve_repo_path
 from ..installer import cleanup_platforms, install_platforms
 from ..manifest import InvalidManifestError, read_manifest, write_manifest
@@ -640,12 +649,21 @@ def run_doctor(flags: argparse.Namespace) -> None:
         if link_status != "ok":
             issues.append(link_message)
     platform_statuses: list[dict[str, str]] = []
+    server_name = (manifest.get("mcp_server_name") if manifest else None) or DEFAULT_MCP_SERVER_NAME
+    expected_server_url = (manifest.get("mcp_server_url") if manifest else None) or DEFAULT_MCP_SERVER_URL
     try:
         platforms = load_platforms(find_platforms_dir())
         context = {"skill_name": "decision-ops", "repo_path": repo_path or ""}
         for platform_def in platforms.values():
             skill_path = resolve_install_path(platform_def.skill, context) if platform_def.skill and platform_def.skill.supported else None
             mcp_path = resolve_install_path(platform_def.mcp, context) if platform_def.mcp and platform_def.mcp.supported else None
+            mcp_status, mcp_detail = _resolve_mcp_status(
+                platform_def=platform_def,
+                config_path_str=mcp_path,
+                server_name=str(server_name),
+                expected_url=str(expected_server_url),
+                issues=issues,
+            )
             platform_statuses.append(
                 {
                     "displayName": platform_def.display_name,
@@ -654,16 +672,22 @@ def run_doctor(flags: argparse.Namespace) -> None:
                     else f"installed ({skill_path})"
                     if skill_path and Path(skill_path).exists()
                     else "not installed",
-                    "mcpStatus": "n/a"
-                    if not (platform_def.mcp and platform_def.mcp.supported)
-                    else f"configured ({mcp_path})"
-                    if mcp_path and Path(mcp_path).exists()
-                    else "not configured",
+                    "mcpStatus": mcp_status,
+                    "mcpDetail": mcp_detail,
                 }
             )
     except (RuntimeError, OSError, ValueError) as error:
         issues.append(_doctor_platform_issue(error))
         platform_statuses = []
+
+    mcp_probe: McpProbeResult | None = None
+    if auth:
+        mcp_probe = probe_mcp_endpoint(api_base_url=auth.apiBaseUrl, token=auth.accessToken)
+        if not mcp_probe.reachable:
+            issues.append(
+                f"DecisionOps MCP endpoint probe failed: {mcp_probe.short_status()}."
+            )
+
     render_doctor_report(
         auth=auth,
         auth_display=auth_display(auth) if auth else "",
@@ -674,7 +698,41 @@ def run_doctor(flags: argparse.Namespace) -> None:
         system_info=system_info,
         cli_config_path=str(config_path()),
         cli_config_error=config_error(),
+        mcp_probe=mcp_probe,
+        mcp_expected_url=str(expected_server_url),
     )
+
+
+def _resolve_mcp_status(
+    *,
+    platform_def,
+    config_path_str: str | None,
+    server_name: str,
+    expected_url: str,
+    issues: list[str],
+) -> tuple[str, str]:
+    """Return (short_status, detail_path_or_blank) for this platform's MCP entry.
+
+    Appends any issues to `issues` in place so the final rollup picks them up.
+    """
+    if not (platform_def.mcp and platform_def.mcp.supported):
+        return "n/a", ""
+    if not config_path_str:
+        return "not configured", ""
+    fmt = platform_def.mcp.format or ""
+    report: McpEntryReport = inspect_mcp_entry(
+        config_path=config_path_str,
+        fmt=fmt,
+        root_key=platform_def.mcp.root_key,
+        server_name=server_name,
+        expected_url=expected_url,
+    )
+    for issue in report.issues:
+        # Prefix with the platform so users know which IDE to go fix.
+        issues.append(f"[{platform_def.display_name}] {issue}")
+    if not report.config_exists:
+        return "not configured", config_path_str
+    return report.short_status(), config_path_str
 
 
 def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

@@ -72,7 +72,9 @@ def _render_mcp_build_content(platform: PlatformDefinition, server_name: str, se
     if mcp is None or not mcp.format:
         raise RuntimeError(f"Platform '{platform.id}' is missing MCP format")
     if mcp.format == "codex_toml":
-        return f'[mcp_servers.{server_name}]\ntype = "http"\nenabled = true\nurl = "{server_url}"\n'
+        # Match Codex's native HTTP-server shape — `url = "..."` only. See
+        # _upsert_codex_toml for why extra fields get dropped.
+        return f'[mcp_servers.{server_name}]\nurl = "{server_url}"\n'
     if mcp.format == "json_map":
         return json.dumps({mcp.root_key or "mcpServers": {server_name: {"type": "http", "url": server_url}}}, indent=2) + "\n"
     raise RuntimeError(f"Unsupported MCP format '{mcp.format}' for {platform.id}")
@@ -80,8 +82,13 @@ def _render_mcp_build_content(platform: PlatformDefinition, server_name: str, se
 
 def _upsert_codex_toml(config_path: str, server_name: str, server_url: str) -> None:
     _validate_toml_key(server_name, "MCP server name")
+    # Codex's MCP schema for HTTP/remote servers is just `url = "..."`. Writing
+    # extra keys like `type` or `enabled` causes Codex to silently drop the
+    # whole entry when the UI saves settings (observed behavior — it rewrites
+    # config.toml and strips entries with unknown fields). Match the shape of
+    # existing HTTP entries (see `notion`, `openaiDeveloperDocs`).
     section_header = f"[mcp_servers.{server_name}]"
-    new_block = [section_header, 'type = "http"', "enabled = true", f'url = "{server_url}"']
+    new_block = [section_header, f'url = "{server_url}"']
     file_path = Path(config_path)
     try:
         lines = file_path.read_text(encoding="utf8").splitlines() if file_path.exists() else []
