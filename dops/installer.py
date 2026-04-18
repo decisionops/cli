@@ -19,6 +19,7 @@ from .git import infer_default_branch, infer_repo_ref
 from .manifest import InvalidManifestError, read_manifest, write_manifest
 from .platforms import (
     PlatformDefinition,
+    auth_instructions,
     context_for_paths,
     expand_path,
     load_platforms,
@@ -402,7 +403,22 @@ def install_platforms(options: dict[str, object]) -> InstallResult:
                 _upsert_json_map(target, platform.mcp.root_key or "mcpServers", server_name, server_url)
             else:
                 raise RuntimeError(f"Unsupported MCP format '{platform.mcp.format}' for {platform.id}")
-            result.installed_mcp.append({"platformId": platform.id, "target": target})
+            auth_steps = auth_instructions(
+                platform,
+                {
+                    "display_name": platform.display_name,
+                    "mcp_server_name": server_name,
+                    "mcp_server_url": server_url,
+                },
+            ) or []
+            result.installed_mcp.append(
+                {
+                    "platformId": platform.id,
+                    "displayName": platform.display_name,
+                    "target": target,
+                    "authSteps": auth_steps,
+                }
+            )
     return result
 
 

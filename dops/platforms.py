@@ -176,6 +176,9 @@ def resolve_install_path(spec: PlatformInstallSpec, context: dict[str, str]) -> 
 
 
 def auth_instructions(platform: PlatformDefinition, context: dict[str, str]) -> list[str] | None:
-    if platform.auth is None or platform.auth.mode != "interactive_handoff":
+    # Any auth mode that carries user-facing instructions should return them
+    # (browser_oauth, interactive_handoff, etc.). `instructions` being empty
+    # is the actual signal that no prompt is needed.
+    if platform.auth is None or not platform.auth.instructions:
         return None
-    return [format_template(step, context) for step in (platform.auth.instructions or [])]
+    return [format_template(step, context) for step in platform.auth.instructions]

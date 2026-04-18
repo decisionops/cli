@@ -274,13 +274,24 @@ def render_install_summary(result) -> None:
         console.print(f"{_status_markup('skip', 'yellow')} MCP config skipped: {entry['platformId']} - {entry['reason']}")
     if result.installed_skills or result.installed_mcp:
         _section_title("Next steps")
-        for line in [
-            "1. Open (or restart) your IDE in the target repository.",
-            "2. Invoke any DecisionOps MCP tool once to trigger the auth handoff.",
-            "3. Complete the sign-in flow prompted by the MCP server.",
-            "4. Retry the same tool call — you're live.",
-        ]:
-            console.print(line)
+        console.print("1. Restart your IDE so it re-reads the updated MCP config.")
+        # Platform-specific OAuth trigger, pulled from each platform's
+        # auth.instructions in the skill catalog. Codex has a clean CLI
+        # (`codex mcp login`), others are palette/UI paths — but they all
+        # beat the old "invoke any tool and hope it prompts" text.
+        for index, entry in enumerate(result.installed_mcp, start=2):
+            platform_label = entry.get("displayName") or entry.get("platformId") or "platform"
+            console.print(f"{index}. Authenticate MCP for {platform_label}:")
+            steps = entry.get("authSteps") or []
+            if not steps:
+                console.print(
+                    "   - Invoke any DecisionOps MCP tool in your IDE to trigger the browser OAuth flow."
+                )
+                continue
+            for step in steps:
+                console.print(f"   - {step}")
+        if not result.installed_mcp:
+            console.print("2. Invoke any DecisionOps MCP tool once to trigger the auth handoff.")
 
 
 def render_cleanup_summary(result) -> None:
