@@ -18,6 +18,12 @@ from dataclasses import dataclass
 from .generated.platform_models import AuthTrigger
 from .platforms import PlatformDefinition, format_template
 
+# Interactive OAuth means the user has to click "Authorize" in a browser —
+# could take a while on slow networks or if the user gets distracted. 15
+# minutes is generous enough for humans but still bounded so a frozen IDE
+# subprocess eventually frees.
+CLI_TRIGGER_TIMEOUT_SECONDS = 900
+
 
 @dataclass
 class TriggerExecutionResult:
@@ -90,7 +96,17 @@ def execute_cli_trigger(trigger: AuthTrigger) -> TriggerExecutionResult:
             detail=f"`{binary}` is not on PATH; install it first",
         )
     try:
-        completed = subprocess.run(list(trigger.command), check=False)
+        completed = subprocess.run(
+            list(trigger.command),
+            check=False,
+            timeout=CLI_TRIGGER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return TriggerExecutionResult(
+            trigger=trigger,
+            status="failed",
+            detail=f"`{' '.join(trigger.command)}` timed out after {CLI_TRIGGER_TIMEOUT_SECONDS}s",
+        )
     except OSError as error:
         return TriggerExecutionResult(
             trigger=trigger,
