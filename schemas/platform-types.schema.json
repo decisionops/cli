@@ -19,13 +19,43 @@
       },
       "additionalProperties": false
     },
+    "AuthTrigger": {
+      "description": "A single action a user (or dops itself) can take to (re)trigger MCP OAuth for this platform. `kind=cli` triggers can be executed directly by `dops auth`; other kinds are rendered as human-readable hints.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["cli", "slash", "palette", "manual"]
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["primary", "reset"],
+          "default": "primary"
+        },
+        "label": { "type": "string" },
+        "hint": { "type": "string" },
+        "command": {
+          "description": "argv array (template placeholders allowed). Required when kind=cli.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["kind"],
+      "additionalProperties": false
+    },
     "PlatformAuthSpec": {
       "type": "object",
       "properties": {
         "mode": { "type": "string" },
         "instructions": {
+          "description": "Deprecated in favor of `triggers`; retained for backward compatibility.",
           "type": "array",
           "items": { "type": "string" }
+        },
+        "triggers": {
+          "description": "Typed auth triggers. Preferred over the flat `instructions` list because it lets dops distinguish commands it can execute from instructions the user must follow.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/AuthTrigger" }
         }
       },
       "additionalProperties": false
@@ -88,9 +118,13 @@
             "instructions": {
               "type": "array",
               "items": { "type": "string" }
+            },
+            "triggers": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/AuthTrigger" }
             }
           },
-          "required": ["mode", "instructions"],
+          "required": ["mode", "instructions", "triggers"],
           "additionalProperties": false
         },
         "default_server": {

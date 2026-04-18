@@ -198,7 +198,7 @@ def register_auth_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     )
     auth.set_defaults(func=lambda args: auth.print_help() or 0)
     auth_subparsers = auth.add_subparsers(dest="auth_command")
-    add_examples(auth, ["dops auth status"])
+    add_examples(auth, ["dops auth status", "dops auth mcp codex"])
     auth_status = auth_subparsers.add_parser(
         "status",
         formatter_class=DopsHelpFormatter,
@@ -206,3 +206,28 @@ def register_auth_commands(subparsers: argparse._SubParsersAction[argparse.Argum
         description="Show the current auth session",
     )
     auth_status.set_defaults(func=lambda args: run_auth_status())
+
+    # `dops auth mcp <platform>` triggers each IDE's declared MCP auth
+    # actions. Kept here (not in repo.py) to keep the auth command group
+    # cohesive and avoid subcommand collisions.
+    from .repo import run_auth_mcp  # local import to sidestep circular deps
+
+    auth_mcp = auth_subparsers.add_parser(
+        "mcp",
+        formatter_class=DopsHelpFormatter,
+        help="Trigger MCP OAuth for one or more installed IDEs",
+        description=(
+            "Runs each platform's declared auth triggers. Codex (and any future IDE "
+            "with a CLI surface) is executed directly; IDEs that only expose slash "
+            "commands or UI paths print their instructions for you to follow."
+        ),
+    )
+    auth_mcp.add_argument(
+        "platform",
+        nargs="*",
+        help="Platform id(s) to authenticate (e.g. codex, claude-code). Defaults to all installed.",
+    )
+    auth_mcp.add_argument("--reset", action="store_true", help="Run `reason=reset` triggers before `primary` to clear stale credentials.")
+    auth_mcp.add_argument("--source-dir", help="Load platform definitions from a local skill checkout instead of the cached download.")
+    auth_mcp.set_defaults(func=run_auth_mcp)
+    add_examples(auth_mcp, ["dops auth mcp codex", "dops auth mcp codex claude-code", "dops auth mcp --reset codex"])

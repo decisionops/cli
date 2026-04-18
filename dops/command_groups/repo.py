@@ -20,6 +20,12 @@ from ..config import (
     config_error,
     config_path,
 )
+from ..auth_trigger import (
+    describe_trigger,
+    execute_cli_trigger,
+    platform_triggers,
+    triggers_by_reason,
+)
 from ..mcp_inspect import (
     ApiAuthProbeResult,
     McpEntryReport,
@@ -717,6 +723,84 @@ def run_doctor(flags: argparse.Namespace) -> None:
     )
 
 
+def run_auth_mcp(flags: argparse.Namespace) -> None:
+    """Execute MCP OAuth triggers for selected platforms.
+
+    - `kind=cli` triggers shell out and stream output.
+    - All other kinds render as instructions the user must follow.
+    - `--reset` runs every platform's `reason=reset` triggers first so
+      stale credentials get cleared before the primary login attempt.
+    """
+    if flags.source_dir:
+        platforms_dir, _ = resolve_local_skill_repo(flags.source_dir)
+    else:
+        platforms_dir = find_platforms_dir()
+
+    all_platforms = load_platforms(platforms_dir)
+    repo_path = resolve_repo_path(None)
+    manifest: dict[str, Any] | None = None
+    if repo_path:
+        try:
+            manifest = read_manifest(repo_path)
+        except InvalidManifestError:
+            manifest = None
+
+    server_name = (manifest.get("mcp_server_name") if manifest else None) or DEFAULT_MCP_SERVER_NAME
+    server_url = (manifest.get("mcp_server_url") if manifest else None) or DEFAULT_MCP_SERVER_URL
+
+    selected_ids: list[str]
+    if flags.platform:
+        missing = [pid for pid in flags.platform if pid not in all_platforms]
+        if missing:
+            raise RuntimeError(f"Unknown platform(s): {', '.join(missing)}")
+        selected_ids = list(flags.platform)
+    else:
+        selected_ids = sorted(all_platforms.keys())
+
+    context = {
+        "display_name": "",  # filled per-platform below
+        "mcp_server_name": str(server_name),
+        "mcp_server_url": str(server_url),
+        "skill_name": "decision-ops",
+        "repo_path": repo_path or "",
+    }
+
+    any_failure = False
+    for platform_id in selected_ids:
+        platform = all_platforms[platform_id]
+        per_platform_context = {**context, "display_name": platform.display_name}
+        triggers = platform_triggers(platform, per_platform_context)
+        if not triggers:
+            console.print(f"[dim]{platform.display_name}: no auth triggers declared; skipping.[/dim]")
+            continue
+        console.print(f"\n[bold]{platform.display_name}[/bold]")
+
+        ordered: list = []
+        if flags.reset:
+            ordered.extend(triggers_by_reason(triggers, "reset"))
+        ordered.extend(triggers_by_reason(triggers, "primary"))
+
+        for trigger in ordered:
+            if trigger.kind == "cli":
+                label = trigger.label or "Run"
+                console.print(f"  → {label}: `{describe_trigger(trigger)}`")
+                result = execute_cli_trigger(trigger)
+                if result.status == "ran":
+                    console.print("    [green]done[/green]")
+                else:
+                    any_failure = True
+                    console.print(f"    [red]failed[/red] — {result.detail}")
+            else:
+                label = trigger.label or trigger.kind
+                # Rich would parse `[slash]` as markup, so render the kind
+                # with a dim color tag and escaped brackets inside that.
+                console.print(f"  - [dim]({trigger.kind})[/dim] {label}")
+                console.print(f"    {describe_trigger(trigger)}")
+
+    if any_failure:
+        raise RuntimeError("One or more auth triggers failed; see output above.")
+
+
 def _resolve_mcp_status(
     *,
     platform_def,
@@ -855,3 +939,4 @@ def register_repo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     doctor.add_argument("--repo-path")
     doctor.set_defaults(func=run_doctor)
     add_examples(doctor, ["dops doctor", "dops doctor --repo-path ~/projects/my-repo"])
+
